@@ -1,0 +1,215 @@
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Screen } from '@/components/ui/Screen';
+import { ReadingScreen } from '@/components/reading/ReadingScreen';
+import { ListeningScreen } from '@/components/listening/ListeningScreen';
+import { WritingScreen } from '@/components/writing/WritingScreen';
+import { colors, spacing } from '@/theme/tokens';
+import { FontAwesome } from '@expo/vector-icons';
+import { startSession } from '@/lib/api/speaking';
+import { useSpeakingStore } from '@/stores/useSpeakingStore';
+import { fetchLesson, fetchLessonQuestions } from '@/lib/api/lessons';
+import type { LessonDTO, QuestionDTO, QuestionGroupDTO } from '@/lib/api/types';
+import type { GroupedQuestion } from '@/stores/useTestStore';
+
+export default function LessonScreen() {
+  const { id, type, part, testType } = useLocalSearchParams<{ id: string; type?: string; part?: string; testType?: string }>();
+  const router = useRouter();
+  const { setSessionId, setCurrentPersonaId, setPrefill, setAppState } = useSpeakingStore();
+  const startedRef = useRef(false);
+  const lessonType = (type || '').toLowerCase();
+  const speakingPart = parseInt(part || '1', 10);
+
+  const [lessonData, setLessonData] = useState<LessonDTO | null>(null);
+  const [allQuestions, setAllQuestions] = useState<QuestionDTO[]>([]);
+  const [loadingLesson, setLoadingLesson] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Load lesson data + questions for reading/listening/writing
+  useEffect(() => {
+    if (!id || lessonType === 'speaking') return;
+    setLoadingLesson(true);
+    setLoadError(null);
+    Promise.all([fetchLesson(id), fetchLessonQuestions(id)])
+      .then(([lesson, questions]) => {
+        setLessonData(lesson);
+        setAllQuestions(questions || []);
+        setLoadingLesson(false);
+      })
+      .catch((err: any) => {
+        setLoadError(err?.message || 'Could not load lesson.');
+        setLoadingLesson(false);
+      });
+  }, [id, lessonType]);
+
+  const groupedQuestions: GroupedQuestion[] = useMemo(() => {
+    if (!lessonData?.question_groups) return [];
+    return lessonData.question_groups.map((g: QuestionGroupDTO) => ({
+      group: g,
+      questions: allQuestions.filter((q) => q.group_id === g.id),
+    }));
+  }, [lessonData?.question_groups, allQuestions]);
+
+  // Speaking auto-start
+  useEffect(() => {
+    if (!id || lessonType !== 'speaking' || startedRef.current) return;
+    startedRef.current = true;
+
+    setCurrentPersonaId('james');
+    setPrefill('Practice speaking test', speakingPart);
+
+    startSession({ personaId: 'james', topic: 'Practice speaking test', part: speakingPart })
+      .then((session) => {
+        setSessionId(session.sessionId);
+        setPrefill(session.opening_question || 'Practice speaking test', speakingPart);
+        setAppState('speaking');
+        router.replace('/speaking/session');
+      })
+      .catch((err: any) => {
+        Alert.alert('Error', err?.message || 'Could not start speaking session.');
+        router.back();
+      });
+  }, [id, lessonType]);
+
+  // Speaking loading
+  if (lessonType === 'speaking') {
+    return (
+      <Screen>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ marginTop: spacing.md, color: colors.textSecondary }}>Starting speaking session...</Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  // Writing screen
+  if (lessonType === 'writing') {
+    if (loadingLesson) {
+      return (
+        <Screen>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ marginTop: spacing.md, color: colors.textSecondary }}>Loading lesson...</Text>
+          </View>
+        </Screen>
+      );
+    }
+    if (loadError) {
+      return (
+        <Screen>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg }}>
+            <Text style={{ color: colors.error, fontSize: 16, marginBottom: spacing.md }}>{loadError}</Text>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={{ color: colors.primary, fontWeight: '700' }}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </Screen>
+      );
+    }
+    if (!lessonData) return null;
+    return (
+      <WritingScreen
+        lesson={lessonData}
+        timeLimitMinutes={lessonData.time_limit || 60}
+      />
+    );
+  }
+
+  // Listening screen
+  if (lessonType === 'listening') {
+    if (loadingLesson) {
+      return (
+        <Screen>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ marginTop: spacing.md, color: colors.textSecondary }}>Loading lesson...</Text>
+          </View>
+        </Screen>
+      );
+    }
+    if (loadError) {
+      return (
+        <Screen>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg }}>
+            <Text style={{ color: colors.error, fontSize: 16, marginBottom: spacing.md }}>{loadError}</Text>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={{ color: colors.primary, fontWeight: '700' }}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </Screen>
+      );
+    }
+    if (!lessonData) return null;
+    return (
+      <ListeningScreen
+        lesson={lessonData}
+        groupedQuestions={groupedQuestions}
+        timeLimitMinutes={lessonData.time_limit || 45}
+      />
+    );
+  }
+
+  // Reading screen
+  if (lessonType === 'reading' || lessonType === 'mini') {
+    if (loadingLesson) {
+      return (
+        <Screen>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ marginTop: spacing.md, color: colors.textSecondary }}>Loading lesson...</Text>
+          </View>
+        </Screen>
+      );
+    }
+    if (loadError) {
+      return (
+        <Screen>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg }}>
+            <Text style={{ color: colors.error, fontSize: 16, marginBottom: spacing.md }}>{loadError}</Text>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={{ color: colors.primary, fontWeight: '700' }}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </Screen>
+      );
+    }
+    if (!lessonData) return null;
+    return (
+      <ReadingScreen
+        lesson={lessonData}
+        groupedQuestions={groupedQuestions}
+        timeLimitMinutes={lessonData.time_limit || 60}
+      />
+    );
+  }
+
+  // Placeholder for other types
+  return (
+    <Screen>
+      <View style={styles.placeholder}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <FontAwesome name="chevron-left" size={20} color={colors.text} />
+        </TouchableOpacity>
+        <FontAwesome name="wrench" size={48} color={colors.outline} />
+        <Text style={styles.placeholderTitle}>Đang phát triển</Text>
+        <Text style={styles.placeholderSub}>
+          {lessonType ? `Bài thi ${lessonType} đang được xây dựng.` : 'Bài học này chưa sẵn sàng.'}
+        </Text>
+        <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
+          <Text style={styles.backLinkText}>Quay lại</Text>
+        </TouchableOpacity>
+      </View>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
+  backBtn: { position: 'absolute', top: spacing.xl, left: spacing.md, padding: spacing.sm },
+  placeholderTitle: { fontSize: 22, fontWeight: '700', color: colors.text },
+  placeholderSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
+  backLink: { marginTop: spacing.md },
+  backLinkText: { fontSize: 16, fontWeight: '700', color: colors.primary },
+});
