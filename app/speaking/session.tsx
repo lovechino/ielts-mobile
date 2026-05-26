@@ -1,4 +1,4 @@
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Screen } from '@/components/ui/Screen';
@@ -9,27 +9,41 @@ import { endSession as apiEndSession } from '@/lib/api/speaking';
 
 export default function SpeakingSessionScreen() {
   const router = useRouter();
-  const { sessionId, setReport, setAppState } = useSpeakingStore();
+  const { sessionId, setReport, setAppState, turns, prefilledTopic } = useSpeakingStore();
   const endCalledRef = useRef(false);
 
-  useEffect(() => {
+  const handleEndSession = async () => {
+    if (endCalledRef.current) return;
+    endCalledRef.current = true;
+
     if (!sessionId) {
       router.replace('/speaking/select');
+      return;
     }
-  }, [sessionId]);
 
-  const handleEndSession = async () => {
-    if (endCalledRef.current || !sessionId) return;
-    endCalledRef.current = true;
     try {
       const res = await apiEndSession(sessionId);
       setReport(res.report);
+    } catch {
+      // API failed — build a fallback report from local turns data
+      const avgBand = turns.length > 0
+        ? turns.reduce((s, t) => s + (t.band_estimate || 0), 0) / turns.length
+        : 0;
+      setReport({
+        sessionId,
+        persona: 'james',
+        duration: 0,
+        turnsCompleted: turns.length,
+        averageBandEstimate: parseFloat(avgBand.toFixed(1)),
+        breakdown: { fluency: avgBand, lexicalResource: avgBand, grammaticalRange: avgBand, pronunciation: avgBand },
+        topErrors: [],
+        nextSessionSuggestion: 'Không thể lấy nhận xét chi tiết. Hãy thử lại lần sau.',
+      });
+    } finally {
       router.replace('/speaking/report');
-    } catch (err: any) {
-      Alert.alert('Error', 'Could not end session.');
-      endCalledRef.current = false;
     }
   };
+
 
   if (!sessionId) return null;
 

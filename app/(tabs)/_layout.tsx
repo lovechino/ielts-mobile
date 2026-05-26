@@ -1,6 +1,9 @@
 import { Tabs } from 'expo-router';
+import { Platform } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { colors } from '@/theme/tokens';
+
+const isMobile = Platform.OS !== 'web';
 
 export default function TabsLayout() {
   return (
@@ -9,15 +12,15 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.outline,
+        tabBarShowLabel: !isMobile,
         tabBarStyle: {
           borderTopWidth: 1,
           borderTopColor: 'rgba(194,198,214,0.3)',
           backgroundColor: 'rgba(247,249,251,0.8)',
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 64,
+          height: isMobile ? 64 : 64,
+          paddingTop: isMobile ? 4 : 8,
+          paddingBottom: isMobile ? 4 : 8,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
       }}
     >
       <Tabs.Screen

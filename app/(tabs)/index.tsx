@@ -51,7 +51,7 @@ export default function HomeScreen() {
   return (
     <Screen>
       <AppHeader
-        title="IELTS Master"
+        title="Peak"
         avatarLetter={user?.full_name?.charAt(0)?.toUpperCase()}
         streak={streak}
         coins={0}

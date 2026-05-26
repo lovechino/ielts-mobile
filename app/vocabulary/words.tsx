@@ -1,11 +1,12 @@
 import { View, ScrollView, Text, StyleSheet, ActivityIndicator, TextInput, Switch, TouchableOpacity } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Screen } from '@/components/ui/Screen';
-import { colors, spacing, radius } from '@/theme/tokens';
 import { FontAwesome } from '@expo/vector-icons';
+import { Screen } from '@/components/ui/Screen';
 import { LearningModeCard } from '@/components/ui/LearningModeCard';
-import { fetchVocabulary, updateVocabProgress } from '@/lib/api/vocabulary';
+import { colors, spacing, radius } from '@/theme/tokens';
+import { useOfflineVocab } from '@/lib/offline/useOfflineVocab';
+import { updateVocabProgress } from '@/lib/api/vocabulary';
 import type { VocabularyDTO } from '@/lib/api/types';
 import * as Speech from 'expo-speech';
 
@@ -56,8 +57,6 @@ export default function VocabWordsScreen() {
   }>();
   const router = useRouter();
 
-  const [allWords, setAllWords] = useState<VocabularyDTO[]>([]);
-  const [loading, setLoading] = useState(true);
   const [displayCount, setDisplayCount] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -66,15 +65,10 @@ export default function VocabWordsScreen() {
   const [learnedIds, setLearnedIds] = useState<Set<string>>(new Set());
   const [toggling, setToggling] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (!courseId) return;
-    const params: any = { course_id: courseId };
-    if (groupBy && groupValue) params[groupBy] = groupValue;
-    fetchVocabulary(params)
-      .then(setAllWords)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [courseId, groupBy, groupValue]);
+  const params: Record<string, string> = { vocab_course_id: courseId || '' };
+  if (groupBy && groupValue) params[groupBy] = groupValue;
+
+  const { words: allWords, loading, offline } = useOfflineVocab(params);
 
   const filteredWords = useMemo(() => {
     let list = [...allWords];
@@ -108,7 +102,15 @@ export default function VocabWordsScreen() {
         else next.delete(wordId);
         return next;
       });
-    } catch { }
+    } catch {
+      // Offline — still toggle locally
+      setLearnedIds((prev) => {
+        const next = new Set(prev);
+        if (value) next.add(wordId);
+        else next.delete(wordId);
+        return next;
+      });
+    }
     setToggling((prev) => {
       const next = new Set(prev);
       next.delete(wordId);
@@ -134,7 +136,16 @@ export default function VocabWordsScreen() {
     <Screen>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }} 
+            style={styles.backBtn}
+          >
             <FontAwesome name="chevron-left" size={20} color={colors.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
@@ -144,6 +155,13 @@ export default function VocabWordsScreen() {
             <Text style={styles.progressText}>{learnedCount}/{totalCount} từ</Text>
           </View>
         </View>
+
+        {offline && (
+          <View style={styles.offlineBanner}>
+            <FontAwesome name="wifi" size={12} color="#fff" />
+            <Text style={styles.offlineBannerText}>Đang xem nội dung đã tải</Text>
+          </View>
+        )}
 
         <View style={styles.filterGrid}>
           <View style={styles.filterCol}>
@@ -358,4 +376,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.primary, borderRadius: radius.pill,
   },
   showMoreText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.secondary, borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.unit,
+    marginBottom: spacing.sm, alignSelf: 'flex-start',
+  },
+  offlineBannerText: { fontSize: 12, fontWeight: '600', color: '#fff' },
 });

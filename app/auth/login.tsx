@@ -1,10 +1,19 @@
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 import { Screen } from '@/components/ui/Screen';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { API_BASE_URL } from '@/constants/config';
+
+// Required: completes the auth session on mobile after returning from Google
+WebBrowser.maybeCompleteAuthSession();
+
+const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -12,7 +21,58 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const login = useAuthStore((s) => s.login);
+  const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
+
+  const redirectUri = makeRedirectUri({ scheme: 'ielts-master' });
+  console.log('Redirect URI:', redirectUri); // TODO: remove after adding to Google Cloud Console
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: WEB_CLIENT_ID,
+    redirectUri,
+    // responseType mặc định là 'code' + PKCE nhưng KHÔNG auto-exchange token
+    // Backend sẽ đảm nhiệm việc exchange code -> token dùng client_secret
+    usePKCE: false,
+    scopes: ['openid', 'profile', 'email'],
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      // Chỉ lấy authorization code, KHÔNG để client tự exchange
+      const code = response.params?.code;
+      if (!code) {
+        Alert.alert('Google Sign-In Error', 'No authorization code returned.');
+        return;
+      }
+      handleGoogleCode(code);
+    } else if (response?.type === 'error') {
+      Alert.alert('Google Sign-In Error', response.error?.message || 'An error occurred.');
+    }
+  }, [response]);
+
+  const handleGoogleCode = async (code: string) => {
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle(code, redirectUri);
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      Alert.alert('Google Sign-In Failed', err?.message || 'Could not authenticate with Google.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGooglePress = () => {
+    if (Platform.OS === 'web') {
+      // Trên Web, bypass hoàn toàn popup để tránh lỗi COOP
+      // Redirect trực tiếp sang API Backend GET /auth/google
+      window.location.href = `${API_BASE_URL}/auth/google`;
+    } else {
+      // Trên Mobile, vẫn dùng popup AuthSession bình thường
+      promptAsync();
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) { Alert.alert('Error', 'Please fill in all fields.'); return; }
@@ -35,7 +95,7 @@ export default function LoginScreen() {
             <View style={styles.brandIcon}>
               <FontAwesome name="graduation-cap" size={28} color={colors.secondary} />
             </View>
-            <Text style={styles.brandName}>IELTS Master</Text>
+            <Text style={styles.brandName}>Peak</Text>
           </View>
           <View style={styles.headerText}>
             <Text style={styles.welcomeTitle}>Welcome back!</Text>
@@ -81,13 +141,15 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
             <View style={styles.socialBtns}>
-              <TouchableOpacity style={styles.socialBtn}>
+              <TouchableOpacity
+                style={[styles.socialBtn, googleLoading && styles.socialBtnDisabled]}
+                onPress={handleGooglePress}
+                disabled={googleLoading || (Platform.OS !== 'web' && !request)}
+              >
                 <FontAwesome name="google" size={18} color={colors.primary} />
-                <Text style={styles.socialBtnText}>Sign in with Google</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.socialBtn}>
-                <FontAwesome name="facebook" size={18} color={colors.primary} />
-                <Text style={styles.socialBtnText}>Sign in with Facebook</Text>
+                <Text style={styles.socialBtnText}>
+                  {googleLoading ? 'Signing in...' : 'Sign in with Google'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -144,6 +206,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(194,198,214,0.6)',
     borderRadius: radius.md, paddingVertical: spacing.md,
   },
+  socialBtnDisabled: { opacity: 0.6 },
   socialBtnText: { fontSize: 16, color: colors.textSecondary },
   footer: { flexDirection: 'row', marginTop: spacing.xl },
   footerText: { fontSize: 14, color: colors.textSecondary },

@@ -65,7 +65,7 @@ export default function ProfileScreen() {
 
   return (
     <Screen>
-      <AppHeader title="IELTS Master" avatarLetter={user?.full_name?.charAt(0)?.toUpperCase() || 'U'} onLeaderboard={() => {}} />
+      <AppHeader title="Peak" avatarLetter={user?.full_name?.charAt(0)?.toUpperCase() || 'U'} onLeaderboard={() => {}} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.pageHeader}>
           <Text style={styles.pageLabel}>Hồ sơ</Text>

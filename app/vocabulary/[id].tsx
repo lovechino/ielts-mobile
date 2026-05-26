@@ -1,11 +1,15 @@
-import { View, ScrollView, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Screen } from '@/components/ui/Screen';
-import { colors, spacing, radius } from '@/theme/tokens';
+import { useMemo } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
-import { fetchVocabulary } from '@/lib/api/vocabulary';
+import { Screen } from '@/components/ui/Screen';
+import { DownloadButton } from '@/components/ui/DownloadButton';
+import { colors, spacing, radius } from '@/theme/tokens';
+import { useOfflineVocab } from '@/lib/offline/useOfflineVocab';
+import { useDownloadStore } from '@/stores/useDownloadStore';
 import type { VocabularyDTO } from '@/lib/api/types';
+
+const VALID_CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
 interface VocabGroup {
   label: string;
@@ -16,16 +20,14 @@ interface VocabGroup {
 export default function VocabGroupsScreen() {
   const { id, structureType } = useLocalSearchParams<{ id: string; structureType?: string }>();
   const router = useRouter();
-  const [words, setWords] = useState<VocabularyDTO[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { words, loading, offline, error } = useOfflineVocab({ vocab_course_id: id || '', structure_type: structureType });
+  const download = useDownloadStore((s) => s.downloads[`voc:${id}`]);
+  const downloadVocab = useDownloadStore((s) => s.downloadVocab);
+  const remove = useDownloadStore((s) => s.remove);
 
-  useEffect(() => {
-    if (!id) return;
-    fetchVocabulary({ course_id: id })
-      .then(setWords)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+  const isWeb = Platform.OS === 'web';
+  const handleDownload = () => { if (id) downloadVocab(id); };
+  const handleDelete = () => { if (id) remove(`voc:${id}`); };
 
   const groups: VocabGroup[] = useMemo(() => {
     if (!words.length) return [];
@@ -34,11 +36,11 @@ export default function VocabGroupsScreen() {
     const map = new Map<string, number>();
     for (const w of words) {
       const key = (w as any)[field];
-      if (key) map.set(key, (map.get(key) || 0) + 1);
+      if (!key) continue;
+      if (isCefr && !VALID_CEFR_LEVELS.includes(key)) continue;
+      map.set(key, (map.get(key) || 0) + 1);
     }
-    const order = isCefr
-      ? ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
-      : [];
+    const order = isCefr ? VALID_CEFR_LEVELS : [];
     return Array.from(map.entries())
       .map(([value, count]) => ({ label: isCefr ? `CEFR ${value}` : value, value, count }))
       .sort((a, b) => {
@@ -62,45 +64,126 @@ export default function VocabGroupsScreen() {
     );
   }
 
+  if (error && !groups.length) {
+    return (
+      <Screen>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <FontAwesome name="chevron-left" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Bài học</Text>
+          <View style={{ width: 20 }} />
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg }}>
+          <Text style={{ color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.md }}>{error}</Text>
+          {!isWeb && (
+            <DownloadButton
+              status={download?.status || 'idle'}
+              sizeKb={download?.sizeKb}
+              onDownload={handleDownload}
+              onDelete={handleDelete}
+            />
+          )}
+        </View>
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: spacing.xs }}>
           <FontAwesome name="chevron-left" size={20} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Bài học</Text>
-        <View style={{ width: 20 }} />
+        <View style={{ width: 32 }} />
       </View>
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.hero}>
+          <Text style={styles.heroTitle}>Lộ trình học tập</Text>
+          <Text style={styles.heroSub}>Chọn cấp độ phù hợp để bắt đầu hành trình chinh phục IELTS.</Text>
+          {!isWeb && (
+            <DownloadButton
+              status={download?.status || 'idle'}
+              sizeKb={download?.sizeKb}
+              onDownload={handleDownload}
+              onDelete={handleDelete}
+            />
+          )}
+        </View>
+
+        {offline && (
+          <View style={styles.offlineBanner}>
+            <FontAwesome name="wifi" size={12} color="#fff" />
+            <Text style={styles.offlineBannerText}>Đang xem nội dung đã tải</Text>
+          </View>
+        )}
+
         {groups.length === 0 && (
           <Text style={{ color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xl }}>
             No lessons available.
           </Text>
         )}
-        {groups.map((g) => (
-          <TouchableOpacity key={g.value} style={styles.groupCard} onPress={() => handleGroupPress(g)} activeOpacity={0.7}>
-            <View style={styles.groupInfo}>
-              <Text style={styles.groupLabel}>{g.label}</Text>
-              <Text style={styles.groupCount}>{g.count} từ</Text>
-            </View>
-            <FontAwesome name="chevron-right" size={16} color={colors.outline} />
-          </TouchableOpacity>
-        ))}
+
+        <View style={styles.cardList}>
+          {groups.map((g) => (
+            <TouchableOpacity
+              key={g.value}
+              style={styles.groupCard}
+              onPress={() => handleGroupPress(g)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.groupCardLeft}>
+                <View style={styles.levelBox}>
+                  <Text style={styles.levelBoxText}>{g.value}</Text>
+                </View>
+                <View style={styles.groupInfo}>
+                  <Text style={styles.groupLabel}>{g.label}</Text>
+                  <Text style={styles.groupCount}>{g.count} từ vựng</Text>
+                </View>
+              </View>
+              <FontAwesome name="chevron-right" size={18} color={colors.outlineVariant} />
+            </TouchableOpacity>
+          ))}
+        </View>
       </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: spacing.xl },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2, gap: spacing.sm },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingTop: spacing.unit * 10, paddingBottom: spacing.sm,
+  },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
+  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl * 2, gap: spacing.lg },
+  hero: { gap: spacing.xs, marginBottom: spacing.xs },
+  heroTitle: { fontSize: 28, fontWeight: '700', color: colors.text, lineHeight: 36 },
+  heroSub: { fontSize: 16, color: colors.textSecondary, lineHeight: 24, marginBottom: spacing.sm },
+
+  cardList: { gap: spacing.md },
   groupCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff', borderRadius: radius.md, padding: spacing.lg,
-    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: '#fff', borderRadius: radius.xl2, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.outlineVariant, borderLeftWidth: 4, borderLeftColor: colors.outlineVariant,
   },
+  groupCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  levelBox: {
+    width: 56, height: 56,
+    backgroundColor: colors.surfaceContainerHigh, borderRadius: radius.xl,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  levelBoxText: { fontSize: 18, fontWeight: '700', color: colors.onSurfaceVariant },
   groupInfo: { gap: spacing.unit },
-  groupLabel: { fontSize: 17, fontWeight: '600', color: colors.text },
-  groupCount: { fontSize: 13, color: colors.textSecondary },
+  groupLabel: { fontSize: 20, fontWeight: '600', color: colors.text, lineHeight: 28 },
+  groupCount: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.secondary, borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.unit,
+    alignSelf: 'flex-start',
+  },
+  offlineBannerText: { fontSize: 12, fontWeight: '600', color: '#fff' },
 });

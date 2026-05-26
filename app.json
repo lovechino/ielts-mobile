@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "IELTS Master",
+    "name": "Peak",
     "slug": "ielts-master",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ielts-master",
+    "jsEngine": "jsc",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",

@@ -26,8 +26,11 @@ export default function TestScreen() {
 
   useEffect(() => {
     getDashboard().then(setDashboard).catch(() => {});
-    getTests('mini').then(setTests).catch(() => {}).finally(() => setLoading(false));
+    getTests().then(setTests).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  const miniTests = tests.filter((t) => t.test_type === 'mini');
+  const fullTests = tests.filter((t) => t.test_type === 'full');
 
   const stats = dashboard
     ? [
@@ -39,43 +42,80 @@ export default function TestScreen() {
         { value: '...', label: 'Last Test', color: colors.secondary },
       ];
 
+  const testTypeLabel = (test: LessonDTO) => {
+    const t = test.test_type || 'mini';
+    const map: Record<string, string> = { mini: 'Mini Test', full: 'Full Test', practice: 'Practice' };
+    return `${map[t] || 'Test'} • ${test.time_limit || 10} mins`;
+  };
+
   return (
     <Screen>
-      <AppHeader title="IELTS Master" avatarLetter="U" onLeaderboard={() => {}} />
+      <AppHeader title="Peak" avatarLetter="U" onLeaderboard={() => {}} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.pageHeader}>
           <Text style={styles.pageLabel}>Kiểm tra</Text>
           <Text style={styles.pageTitle}>Practice Tests</Text>
         </View>
         <StatsGrid items={stats} />
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Mini tests</Text>
-          <Text style={styles.seeAll}>View All</Text>
-        </View>
+
         {loading ? (
           <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: spacing.xl }} />
-        ) : tests.length > 0 ? (
-          tests.map((test) => {
-            const type = (test.lesson_type || 'reading').toLowerCase();
-            const iconDef = ICON_MAP[type] || ICON_MAP.reading;
-            const subtitle = `Mini Test • ${test.time_limit || 10} mins`;
-            return (
-              <TestListItem
-                key={test.id}
-                icon={iconDef.icon}
-                iconBgColor={iconDef.bg}
-                iconColor={iconDef.fg}
-                title={test.title}
-                subtitle={subtitle}
-                onPress={() => router.push(`/lesson/${test.id}?type=${test.lesson_type}&part=${test.speaking_part || 1}&testType=${test.test_type || 'mini'}`)}
-              />
-            );
-          })
         ) : (
-          <Text style={{ color: colors.textSecondary, paddingVertical: spacing.sm }}>
-            No mini tests available yet.
-          </Text>
+          <>
+            {miniTests.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Mini Tests</Text>
+                </View>
+                {miniTests.map((test) => {
+                  const type = (test.lesson_type || 'reading').toLowerCase();
+                  const iconDef = ICON_MAP[type] || ICON_MAP.reading;
+                  return (
+                    <TestListItem
+                      key={test.id}
+                      icon={iconDef.icon}
+                      iconBgColor={iconDef.bg}
+                      iconColor={iconDef.fg}
+                      title={test.title}
+                      subtitle={testTypeLabel(test)}
+                      onPress={() => router.push(`/lesson/${test.id}?type=${test.lesson_type}&part=${test.speaking_part || 1}&testType=${test.test_type || 'mini'}`)}
+                    />
+                  );
+                })}
+              </>
+            )}
+
+            {fullTests.length > 0 && (
+              <>
+                <View style={[styles.sectionHeader, { marginTop: spacing.md }]}>
+                  <Text style={styles.sectionTitle}>Full Tests</Text>
+                </View>
+                {fullTests.map((test) => {
+                  const type = (test.lesson_type || 'reading').toLowerCase();
+                  const iconDef = ICON_MAP[type] || ICON_MAP.reading;
+                  return (
+                    <TestListItem
+                      key={test.id}
+                      icon={iconDef.icon}
+                      iconBgColor={iconDef.bg}
+                      iconColor={iconDef.fg}
+                      title={test.title}
+                      subtitle={testTypeLabel(test)}
+                      onPress={() => router.push(`/lesson/${test.id}?type=${test.lesson_type}&part=${test.speaking_part || 1}&testType=${test.test_type || 'mini'}`)}
+                    />
+                  );
+                })}
+              </>
+            )}
+
+            {tests.length === 0 && (
+              <Text style={{ color: colors.textSecondary, paddingVertical: spacing.sm }}>
+                No tests available yet.
+              </Text>
+            )}
+          </>
         )}
+
         <PremiumCard
           title="Unlock Full Mock Tests"
           description="Get realistic exam conditions, detailed AI scoring, and instant feedback on all modules."

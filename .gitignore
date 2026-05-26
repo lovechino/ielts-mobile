@@ -32,3 +32,6 @@ yarn-error.*
 
 # TypeScript
 *.tsbuildinfo
+
+# Generated copy of expo/tsconfig.base (fix for module: preserve)
+tsconfig.expo-base.json

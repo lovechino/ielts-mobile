@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { useSpeakingStore } from '@/stores/useSpeakingStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { startSession } from '@/lib/api/speaking';
 import { FontAwesome } from '@expo/vector-icons';
 
@@ -25,8 +26,9 @@ export default function SpeakingSelectScreen() {
   const router = useRouter();
   const { topic, lessonId } = useLocalSearchParams<{ topic?: string; lessonId?: string }>();
   const { setSessionId, setCurrentPersonaId, setPrefill, setAppState } = useSpeakingStore();
+  const { user } = useAuthStore();
   const [selectedMode, setSelectedMode] = useState('part1');
-  const [selectedPersona, setSelectedPersona] = useState('james');
+  const [selectedPersona, setSelectedPersona] = useState(user?.ai_persona || 'james');
 
   const getPart = () => selectedMode === 'part1' ? 1 : selectedMode === 'part2' ? 2 : selectedMode === 'part3' ? 3 : 1;
 
@@ -38,9 +40,9 @@ export default function SpeakingSelectScreen() {
       setPrefill(topic, part);
     }
     try {
-      const session = await startSession({ personaId: selectedPersona, topic: topic || 'general', part });
+      const session = await startSession({ personaId: selectedPersona, topic: topic || 'Free Practice', part });
       setSessionId(session.sessionId);
-      setPrefill(session.opening_question || topic || 'general', part);
+      setPrefill(topic || 'Free Practice', part);
       setAppState('speaking');
       router.push('/speaking/session');
     } catch (err: any) {

@@ -26,21 +26,34 @@ export default function LessonScreen() {
   const [loadingLesson, setLoadingLesson] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Load lesson data + questions for reading/listening/writing
+  // Load lesson data + questions for all types (including speaking)
   useEffect(() => {
-    if (!id || lessonType === 'speaking') return;
+    if (!id) return;
     setLoadingLesson(true);
     setLoadError(null);
-    Promise.all([fetchLesson(id), fetchLessonQuestions(id)])
-      .then(([lesson, questions]) => {
-        setLessonData(lesson);
-        setAllQuestions(questions || []);
-        setLoadingLesson(false);
-      })
-      .catch((err: any) => {
-        setLoadError(err?.message || 'Could not load lesson.');
-        setLoadingLesson(false);
-      });
+
+    if (lessonType === 'speaking') {
+      fetchLesson(id)
+        .then((lesson) => {
+          setLessonData(lesson);
+          setLoadingLesson(false);
+        })
+        .catch((err: any) => {
+          setLoadError(err?.message || 'Could not load lesson.');
+          setLoadingLesson(false);
+        });
+    } else {
+      Promise.all([fetchLesson(id), fetchLessonQuestions(id)])
+        .then(([lesson, questions]) => {
+          setLessonData(lesson);
+          setAllQuestions(questions || []);
+          setLoadingLesson(false);
+        })
+        .catch((err: any) => {
+          setLoadError(err?.message || 'Could not load lesson.');
+          setLoadingLesson(false);
+        });
+    }
   }, [id, lessonType]);
 
   const groupedQuestions: GroupedQuestion[] = useMemo(() => {
@@ -51,18 +64,21 @@ export default function LessonScreen() {
     }));
   }, [lessonData?.question_groups, allQuestions]);
 
-  // Speaking auto-start
+  // Speaking auto-start — waits for lesson data to use actual content
   useEffect(() => {
-    if (!id || lessonType !== 'speaking' || startedRef.current) return;
+    if (!id || lessonType !== 'speaking' || startedRef.current || loadingLesson || !lessonData) return;
     startedRef.current = true;
 
-    setCurrentPersonaId('james');
-    setPrefill('Practice speaking test', speakingPart);
+    const topic = lessonData.content || lessonData.title || 'Practice speaking test';
+    const sp = lessonData.speaking_part || speakingPart;
 
-    startSession({ personaId: 'james', topic: 'Practice speaking test', part: speakingPart })
+    setCurrentPersonaId('james');
+    setPrefill(topic, sp);
+
+    startSession({ personaId: 'james', topic, part: sp })
       .then((session) => {
         setSessionId(session.sessionId);
-        setPrefill(session.opening_question || 'Practice speaking test', speakingPart);
+        setPrefill(topic, sp);
         setAppState('speaking');
         router.replace('/speaking/session');
       })
@@ -70,7 +86,7 @@ export default function LessonScreen() {
         Alert.alert('Error', err?.message || 'Could not start speaking session.');
         router.back();
       });
-  }, [id, lessonType]);
+  }, [id, lessonType, lessonData, loadingLesson]);
 
   // Speaking loading
   if (lessonType === 'speaking') {
@@ -78,7 +94,9 @@ export default function LessonScreen() {
       <Screen>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={{ marginTop: spacing.md, color: colors.textSecondary }}>Starting speaking session...</Text>
+          <Text style={{ marginTop: spacing.md, color: colors.textSecondary }}>
+            {loadingLesson ? 'Loading test...' : 'Starting speaking session...'}
+          </Text>
         </View>
       </Screen>
     );

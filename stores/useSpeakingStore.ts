@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { ExaminerFeedback, SessionReport } from '@/lib/api/speaking';
 
-export type SpeakingAppState = 'idle' | 'loading' | 'speaking' | 'listening' | 'processing' | 'hesitation' | 'completed';
+export type SpeakingAppState = 'idle' | 'loading' | 'speaking' | 'listening' | 'processing' | 'hesitation' | 'preparing' | 'recording' | 'completed';
 
 interface SpeakingState {
   sessionId: string | null;
@@ -13,6 +13,7 @@ interface SpeakingState {
   report: SessionReport | null;
   prefilledTopic: string;
   prefilledPart: number;
+  prepTimeLeft: number;
   setSessionId: (id: string | null) => void;
   setCurrentPersonaId: (id: string) => void;
   setAppState: (state: SpeakingAppState) => void;
@@ -21,6 +22,7 @@ interface SpeakingState {
   setReport: (report: SessionReport | null) => void;
   addTurn: (turn: ExaminerFeedback) => void;
   setPrefill: (topic: string, part: number) => void;
+  setPrepTimeLeft: (sec: number) => void;
   resetStore: () => void;
 }
 
@@ -34,6 +36,7 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
   report: null,
   prefilledTopic: '',
   prefilledPart: 1,
+  prepTimeLeft: 60,
 
   setSessionId: (id) => set({ sessionId: id }),
   setCurrentPersonaId: (id) => set({ currentPersonaId: id }),
@@ -43,6 +46,7 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
   setReport: (report) => set({ report }),
   addTurn: (turn) => set((state) => ({ turns: [...state.turns, turn] })),
   setPrefill: (topic, part) => set({ prefilledTopic: topic, prefilledPart: part }),
+  setPrepTimeLeft: (sec) => set({ prepTimeLeft: sec }),
   resetStore: () => set({
     sessionId: null,
     appState: 'idle',
@@ -52,5 +56,6 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
     report: null,
     prefilledTopic: '',
     prefilledPart: 1,
+    prepTimeLeft: 60,
   }),
 }));
