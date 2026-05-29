@@ -11,8 +11,10 @@ import { useAudioSync } from './useAudioSync';
 import { ExamTimer } from '@/components/shared/ExamTimer';
 import { AnswerSheetPanel } from '@/components/shared/AnswerSheetPanel';
 import { SubmitModal } from '@/components/shared/SubmitModal';
+import { ExamResultModal } from '@/components/shared/ExamResultModal';
+import { ScoringQueuedScreen } from '@/components/shared/ScoringQueuedScreen';
 import { FontAwesome } from '@expo/vector-icons';
-import { submitAnswers } from '@/lib/api/progress';
+import { submitAnswers, saveDraft } from '@/lib/api/progress';
 
 interface ListeningScreenProps {
   lesson: LessonDTO;
@@ -26,23 +28,33 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
     initLesson, setAnswer, setSubmitting, setCompleted,
     answers, groups, setCurrentGroup,
     isSubmitting, isCompleted, results, score,
-    lessonId, getAllQuestions,
+    lessonId, lessonTitle, getAllQuestions, resetForRetake,
   } = useTestStore();
 
   const [showAnswerSheet, setShowAnswerSheet] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [isDeferred, setIsDeferred] = useState(false);
+  const [deferredInfo, setDeferredInfo] = useState<{ estimatedMinutes: number; message: string } | null>(null);
   const [audioTimeMs, setAudioTimeMs] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+  const autoSubmittedRef = useRef(false);
 
   useEffect(() => {
     if (!lesson?.id) return;
     initLesson(lesson.id, lesson.title, lesson.passages || [], groupedQuestions, timeLimitMinutes);
+    autoSubmittedRef.current = false;
   }, [lesson?.id]);
 
   useEffect(() => {
     if (!lessonId) return;
     setCurrentGroup(0);
   }, [lessonId]);
+
+  // Hiện result modal khi hoàn thành
+  useEffect(() => {
+    if (isCompleted) setShowResultModal(true);
+  }, [isCompleted]);
 
   const allQs = getAllQuestions();
   const answeredCount = Object.keys(answers).length;
@@ -60,7 +72,6 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
   }, [allQs]);
 
   const { activeQuestionNumber } = useAudioSync(audioTimeMs, timestampedQuestions);
-
   const passageWithAudio = lesson.passages?.find((p) => p.audio_url);
 
   const handleTimeUpdate = useCallback((timeMs: number) => {
@@ -78,6 +89,18 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
     try {
       const payload = Object.entries(answers).map(([question_id, answer]) => ({ question_id, answer }));
       const res = await submitAnswers({ lesson_id: lessonId, answers: payload });
+
+      // Free user → deferred (kết quả sau 2 phút)
+      if ((res as any).scoring_mode === 'deferred') {
+        setIsDeferred(true);
+        setDeferredInfo({
+          estimatedMinutes: (res as any).estimated_wait_minutes ?? 2,
+          message: (res as any).message ?? 'Kết quả sẽ xuất hiện trong mục Lịch sử sau vài phút.',
+        });
+        setCompleted([], 0);
+        return;
+      }
+
       setCompleted(res.results || [], res.score || 0);
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to submit answers.');
@@ -85,15 +108,28 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
     }
   }, [lessonId, answers, isSubmitting]);
 
+  // Auto-submit khi hết giờ
   const handleTimeUp = useCallback(() => {
-    Alert.alert('Time Up', 'Your time is up. Submitting your answers...');
-    setShowSubmitModal(true);
-  }, []);
+    if (autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    handleSubmit();
+  }, [handleSubmit]);
 
   const handleJumpTo = useCallback(() => {
     setShowAnswerSheet(false);
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
+
+  const handleRetake = useCallback(async () => {
+    setShowResultModal(false);
+    if (lessonId) {
+      try {
+        await saveDraft({ lesson_id: lessonId, draft_answers: {}, time_left: timeLimitMinutes * 60 });
+      } catch { /* ignore */ }
+    }
+    resetForRetake();
+    autoSubmittedRef.current = false;
+  }, [lessonId, timeLimitMinutes, resetForRetake]);
 
   if (!lesson?.id) {
     return (
@@ -103,32 +139,16 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
     );
   }
 
-  if (isCompleted && results) {
-    const pct = totalQuestions > 0 ? Math.round((score || 0) / totalQuestions * 100) : 0;
+  // Free user: hiện màn hình thông báo deferred
+  if (isCompleted && isDeferred && deferredInfo) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.resultContent}>
-        <View style={styles.resultCard}>
-          <FontAwesome name="check-circle" size={56} color={colors.tertiary} style={{ marginBottom: spacing.md }} />
-          <Text style={styles.resultTitle}>Listening Complete</Text>
-          <Text style={styles.resultScore}>{score} / {totalQuestions}</Text>
-          <Text style={styles.resultPct}>{pct}%</Text>
-          <View style={styles.resultBreakdown}>
-            {results.map((r, i) => (
-              <View key={r.question_id} style={styles.resultRow}>
-                <Text style={styles.resultQNum}>Q{i + 1}</Text>
-                <FontAwesome name={r.is_correct ? 'check' : 'times'} size={14} color={r.is_correct ? colors.success : colors.error} />
-                <Text style={styles.resultAnswer}>Your: {r.answer || '-'}</Text>
-                {!r.is_correct && r.correct_answer ? (
-                  <Text style={styles.resultCorrect}>Correct: {r.correct_answer}</Text>
-                ) : null}
-              </View>
-            ))}
-          </View>
-          <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()}>
-            <Text style={styles.doneBtnText}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+      <ScoringQueuedScreen
+        lessonTitle={lessonTitle || lesson.title}
+        estimatedMinutes={deferredInfo.estimatedMinutes}
+        message={deferredInfo.message}
+        onGoHome={() => router.replace('/(tabs)')}
+        onGoHistory={() => router.replace('/(tabs)/test')}
+      />
     );
   }
 
@@ -155,17 +175,26 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
           />
         )}
 
-        {groups.map((g) => (
-          <View key={g.group.id}>
-            <ListeningGroupRenderer
-              group={g.group}
-              questions={g.questions}
-              answers={answers}
-              onAnswer={handleAnswer}
-              activeQuestionNumber={activeQuestionNumber}
-            />
-          </View>
-        ))}
+        {groups.reduce<{ offset: number; elements: React.ReactNode[] }>(
+          (acc, g) => {
+            const startIndex = acc.offset;
+            acc.elements.push(
+              <View key={g.group.id}>
+                <ListeningGroupRenderer
+                  group={g.group}
+                  questions={g.questions}
+                  answers={answers}
+                  onAnswer={handleAnswer}
+                  activeQuestionNumber={activeQuestionNumber}
+                  startIndex={startIndex}
+                />
+              </View>
+            );
+            acc.offset += g.questions.length;
+            return acc;
+          },
+          { offset: 0, elements: [] }
+        ).elements}
       </ScrollView>
 
       <View style={styles.bottomBar}>
@@ -181,7 +210,9 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
           onPress={() => setShowSubmitModal(true)}
           disabled={isSubmitting}
         >
-          {isSubmitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.submitText}>Submit</Text>}
+          {isSubmitting
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Text style={styles.submitText}>Submit</Text>}
         </TouchableOpacity>
       </View>
 
@@ -191,7 +222,22 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
         </View>
       )}
 
-      <SubmitModal visible={showSubmitModal} onClose={() => setShowSubmitModal(false)} onConfirm={handleSubmit} />
+      <SubmitModal
+        visible={showSubmitModal}
+        onClose={() => setShowSubmitModal(false)}
+        onConfirm={handleSubmit}
+      />
+
+      <ExamResultModal
+        visible={showResultModal}
+        lessonTitle={lessonTitle || lesson.title}
+        lessonType="listening"
+        score={score ?? 0}
+        totalQuestions={totalQuestions}
+        results={results ?? []}
+        onDone={() => { setShowResultModal(false); router.back(); }}
+        onRetake={handleRetake}
+      />
     </View>
   );
 }
@@ -224,16 +270,4 @@ const styles = StyleSheet.create({
   },
   submitText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   answerSheetOverlay: { position: 'absolute', bottom: 64, left: spacing.md, right: spacing.md },
-  resultContent: { padding: spacing.lg, paddingBottom: spacing.xxl + 40 },
-  resultCard: { backgroundColor: '#fff', borderRadius: radius.xl, padding: spacing.lg, alignItems: 'center', ...shadow.card },
-  resultTitle: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-  resultScore: { fontSize: 36, fontWeight: '800', color: colors.primary, fontVariant: ['tabular-nums'] },
-  resultPct: { fontSize: 16, color: colors.textSecondary, marginBottom: spacing.lg },
-  resultBreakdown: { width: '100%', gap: spacing.xs, marginBottom: spacing.lg },
-  resultRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.unit },
-  resultQNum: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, width: 28 },
-  resultAnswer: { fontSize: 13, color: colors.text, flex: 1 },
-  resultCorrect: { fontSize: 12, color: colors.success, fontWeight: '600' },
-  doneBtn: { backgroundColor: colors.primary, borderRadius: radius.lg, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.xl },
-  doneBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 });

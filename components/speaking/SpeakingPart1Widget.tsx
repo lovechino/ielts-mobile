@@ -225,53 +225,27 @@ async function readAudioFileBase64(uri: string): Promise<string> {
 export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: SpeakingPart1WidgetProps) {
   const { speak, stop: stopTTS } = useTTS();
   const { startRecording, stopRecording, meteringValue, isRecording } = useRecorder();
-  const { sessionId, currentPersonaId, appState, setAppState, lastFeedback, setFeedback, addTurn, prefilledTopic, prefilledPart } = useSpeakingStore();
+  const { sessionId, currentPersonaId, appState, setAppState, lastFeedback, setFeedback, addTurn, prefilledTopic, lessonParts, currentPartIndex, setPartIndex, fullContent } = useSpeakingStore();
 
   const [promptExpanded, setPromptExpanded] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [localTranscript, setLocalTranscript] = useState('');
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [ending, setEnding] = useState(false); // true while waiting for end API
 
-  const timerDuration = PART_DURATIONS[prefilledPart] || 300;
+  const currentPart = lessonParts[currentPartIndex] || 1;
+  const timerDuration = PART_DURATIONS[currentPart] || 300;
+
+  // Extract dynamic topic from pre-loaded fullContent JSON
+  const currentPartData = fullContent?.[`part${currentPart}`];
+  const dynamicTopic = currentPart === 1 
+    ? (currentPartData?.topics?.[0]?.name || prefilledTopic)
+    : (currentPart === 2 ? (currentPartData?.cue_card || prefilledTopic) : (currentPartData?.discussion_topics?.[0] || prefilledTopic));
 
   const entranceAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(entranceAnim, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, []);
-
-  useVAD({
-    meteringValue,
-    isRecording,
-    onSilenceDetected: async () => {
-      const uri = await stopRecording();
-      if (uri) handleVoiceSubmission(uri);
-    },
-    onVoiceResumed: () => setAppState('listening'),
-  });
-
-  useEffect(() => {
-    if (appState === 'processing' && lastFeedback) {
-      setAppState('speaking');
-    }
-  }, [appState, lastFeedback]);
-
-  useEffect(() => {
-    if (appState === 'speaking' && lastFeedback?.response) {
-      speak(lastFeedback.response, currentPersonaId, undefined, () => {
-        setAppState('listening');
-        if (lastFeedback.next_question) {
-          speak(lastFeedback.next_question, currentPersonaId);
-        }
-      });
-    }
-  }, [lastFeedback, appState, currentPersonaId, speak]);
-
-  useEffect(() => () => stopTTS(), []);
-
-  const updateStore = (res: any) => {
-    setLocalTranscript(res.transcript || '');
-    setFeedback(res);
-    addTurn(res);
-  };
 
   const handleVoiceSubmission = async (uri: string) => {
     setSubmitting(true);
@@ -281,7 +255,22 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
       if (!base64 || !base64.trim()) throw new Error('EMPTY');
       if (!sessionId) return;
       const res = await submitTurn({ sessionId, audio: base64, format: Platform.OS === 'web' ? 'webm' : 'm4a' });
-      updateStore(res);
+      
+      // Update store with feedback
+      setLocalTranscript(res.transcript || '');
+      setFeedback(res);
+      addTurn(res);
+
+      // Handle Transition command from AI
+      if (res.transition_to_part) {
+        const nextIdx = lessonParts.indexOf(res.transition_to_part);
+        if (nextIdx !== -1) {
+          setTimeout(() => {
+            setPartIndex(nextIdx);
+            // Optionally play a sound or alert here
+          }, 1500);
+        }
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message === 'EMPTY' ? 'Please speak longer.' : 'Failed to process audio.');
       setAppState('listening');
@@ -290,23 +279,40 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
     }
   };
 
-  const confirmEndSession = useCallback(() => {
-    Alert.alert(
-      'End Session',
-      'Are you sure you want to end this speaking session and see your report?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'End & View Report', style: 'destructive', onPress: () => onManualEnd?.() },
-      ]
-    );
-  }, [onManualEnd]);
+  const confirmEndSession = useCallback(async () => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('End this speaking session and see your report?')
+      : await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'End Session',
+            'Are you sure you want to end this speaking session and see your report?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'End & View Report', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmed) return;
+
+    setSessionEnded(true);
+    setEnding(true);
+    if (isRecording) {
+      await stopRecording();
+    }
+    stopTTS();
+    await onManualEnd?.();
+    setEnding(false);
+  }, [onManualEnd, isRecording, stopRecording, stopTTS]);
 
   const handleMicPress = async () => {
     stopTTS();
     if (isRecording) {
+      // Luôn cho phép stop recording, kể cả khi đang submitting
       const uri = await stopRecording();
-      if (uri) handleVoiceSubmission(uri);
+      if (uri && !submitting) handleVoiceSubmission(uri);
     } else {
+      if (submitting) return; // Không bắt đầu recording mới khi đang xử lý
       setAppState('listening');
       await startRecording();
     }
@@ -318,8 +324,20 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
     : appState === 'processing' ? 'Analyzing speech...'
     : 'Connected';
 
-  const partLabel = `Speaking Part ${prefilledPart}`;
+  const partLabel = `Speaking Part ${currentPart}`;
   const { name } = PERSONA_DETAILS[currentPersonaId] || PERSONA_DETAILS.james;
+
+  // While ending — show a simple overlay so user gets immediate feedback
+  if (ending) {
+    return (
+      <View style={[styles.widgetContainer, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 16, fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>
+          Đang tổng hợp kết quả...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.widgetContainer}>
@@ -330,9 +348,9 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
         <TouchableOpacity onPress={onExit} style={styles.headerBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Peak</Text>
+        <Text style={styles.headerTitle}>Talko</Text>
         <View style={styles.headerRight}>
-          <SpeakingTimer totalSeconds={timerDuration} onTimeUp={onEndSession} />
+          <SpeakingTimer totalSeconds={timerDuration} onTimeUp={onEndSession} stopped={sessionEnded} />
           <TouchableOpacity onPress={confirmEndSession} style={styles.endBtn}>
             <Text style={styles.endBtnText}>End</Text>
           </TouchableOpacity>
@@ -341,7 +359,7 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
 
       <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
         <Animated.View style={{ opacity: entranceAnim }}>
-          <TopicPromptCard topic={prefilledTopic} partLabel={partLabel} expanded={promptExpanded} onToggle={() => setPromptExpanded(!promptExpanded)} />
+          <TopicPromptCard topic={dynamicTopic} partLabel={partLabel} expanded={promptExpanded} onToggle={() => setPromptExpanded(!promptExpanded)} />
         </Animated.View>
 
         <Animated.View style={[styles.centralArea, { opacity: entranceAnim }]}>
@@ -360,10 +378,9 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
         <TouchableOpacity
           onPress={handleMicPress}
           style={[styles.micBtn, isRecording && styles.micBtnActive]}
-          disabled={submitting}
           activeOpacity={0.8}
         >
-          {submitting ? (
+          {submitting && !isRecording ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
             <FontAwesome name="microphone" size={28} color={isRecording ? '#fff' : colors.primary} />

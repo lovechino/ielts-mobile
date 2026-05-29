@@ -18,6 +18,13 @@ export interface LessonDTO {
   time_limit?: number | null;
   is_test?: boolean | null;
   test_type?: string | null;
+  /**
+   * Unified parts array for ALL skills.
+   * Speaking: [1,2,3] | Writing: [1] or [2] or [1,2] | Reading/Listening: [1,3] etc.
+   * This is the single source of truth — use this instead of speaking_part.
+   */
+  lesson_parts?: number[] | null;
+  /** @deprecated Legacy single-part field. Use lesson_parts instead. */
   speaking_part?: number | null;
   passages?: PassageDTO[];
   question_groups?: QuestionGroupDTO[];
@@ -109,6 +116,19 @@ export interface ProgressResultItem {
   correct_answer?: string;
   answer?: string;
   score?: number;
+  /** AI writing feedback object — chỉ có với lesson_type = 'writing' */
+  feedback?: {
+    overall_score?: number;
+    criteria_scores?: {
+      task_response?: number;
+      coherence_cohesion?: number;
+      lexical_resource?: number;
+      grammar_accuracy?: number;
+      [key: string]: number | undefined;
+    };
+    feedback?: string;
+    suggested_version?: string;
+  };
 }
 
 export interface ProgressDTO {

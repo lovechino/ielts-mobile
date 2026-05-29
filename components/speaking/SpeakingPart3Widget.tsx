@@ -43,10 +43,13 @@ async function readAudioFileBase64(uri: string): Promise<string> {
 export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: SpeakingPart3WidgetProps) {
   const { speak, stop: stopTTS } = useTTS();
   const { startRecording, stopRecording, meteringValue, isRecording } = useRecorder();
-  const { sessionId, currentPersonaId, appState, setAppState, lastFeedback, setFeedback, addTurn, prefilledTopic, prefilledPart } = useSpeakingStore();
+  const { sessionId, currentPersonaId, appState, setAppState, lastFeedback, setFeedback, addTurn, lessonParts, currentPartIndex, setPartIndex } = useSpeakingStore();
 
+  const currentPart = lessonParts[currentPartIndex] || 3;
   const [submitting, setSubmitting] = useState(false);
   const [localTranscript, setLocalTranscript] = useState('');
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   const entranceAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -85,12 +88,6 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
 
   useEffect(() => () => stopTTS(), []);
 
-  const updateStore = (res: any) => {
-    setLocalTranscript(res.transcript || '');
-    setFeedback(res);
-    addTurn(res);
-  };
-
   const handleVoiceSubmission = async (uri: string) => {
     setSubmitting(true);
     setAppState('processing');
@@ -99,7 +96,20 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
       if (!base64 || !base64.trim()) throw new Error('EMPTY');
       if (!sessionId) return;
       const res = await submitTurn({ sessionId, audio: base64, format: Platform.OS === 'web' ? 'webm' : 'm4a' });
-      updateStore(res);
+      
+      setLocalTranscript(res.transcript || '');
+      setFeedback(res);
+      addTurn(res);
+
+      // Handle Transition command from AI (though Part 3 is usually the last)
+      if (res.transition_to_part) {
+        const nextIdx = lessonParts.indexOf(res.transition_to_part);
+        if (nextIdx !== -1) {
+          setTimeout(() => {
+            setPartIndex(nextIdx);
+          }, 1500);
+        }
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message === 'EMPTY' ? 'Please speak longer.' : 'Failed to process audio.');
       setAppState('listening');
@@ -108,23 +118,39 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
     }
   };
 
-  const confirmEndSession = useCallback(() => {
-    Alert.alert(
-      'End Session',
-      'Are you sure you want to end this speaking session and see your report?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'End & View Report', style: 'destructive', onPress: () => onManualEnd?.() },
-      ]
-    );
-  }, [onManualEnd]);
+  const confirmEndSession = useCallback(async () => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('End this speaking session and see your report?')
+      : await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'End Session',
+            'Are you sure you want to end this speaking session and see your report?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'End & View Report', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmed) return;
+
+    setSessionEnded(true);
+    setEnding(true);
+    if (isRecording) {
+      await stopRecording();
+    }
+    stopTTS();
+    await onManualEnd?.();
+    setEnding(false);
+  }, [onManualEnd, isRecording, stopRecording, stopTTS]);
 
   const handleMicPress = async () => {
     stopTTS();
     if (isRecording) {
       const uri = await stopRecording();
-      if (uri) handleVoiceSubmission(uri);
+      if (uri && !submitting) handleVoiceSubmission(uri);
     } else {
+      if (submitting) return;
       setAppState('listening');
       await startRecording();
     }
@@ -135,6 +161,17 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
     : appState === 'listening' ? 'Listening to you...'
     : appState === 'processing' ? 'Analyzing speech...'
     : 'Connected';
+
+  if (ending) {
+    return (
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 16, fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>
+          Đang tổng hợp kết quả...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -147,9 +184,9 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
         <TouchableOpacity onPress={onExit} style={styles.headerBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Peak</Text>
+        <Text style={styles.headerTitle}>Talko</Text>
         <View style={styles.headerRight}>
-          <SpeakingTimer totalSeconds={PART3_DURATION} onTimeUp={onEndSession} />
+          <SpeakingTimer totalSeconds={PART3_DURATION} onTimeUp={onEndSession} stopped={sessionEnded} />
           <TouchableOpacity onPress={confirmEndSession} style={styles.endBtn}>
             <Text style={styles.endBtnText}>End</Text>
           </TouchableOpacity>
@@ -161,7 +198,7 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
         <Animated.View style={{ opacity: entranceAnim }}>
           <View style={styles.topicBanner}>
             <FontAwesome name="commenting" size={14} color={colors.secondary} style={{ marginRight: 6 }} />
-            <Text style={styles.topicText}>Speaking Part {prefilledPart} — Discussion</Text>
+            <Text style={styles.topicText}>Speaking Part {currentPart} — Discussion</Text>
           </View>
         </Animated.View>
 
@@ -193,10 +230,9 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
         <TouchableOpacity
           onPress={handleMicPress}
           style={[styles.micBtn, isRecording && styles.micBtnActive]}
-          disabled={submitting}
           activeOpacity={0.8}
         >
-          {submitting ? (
+          {submitting && !isRecording ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
             <FontAwesome name="microphone" size={28} color={isRecording ? '#fff' : colors.primary} />

@@ -8,9 +8,10 @@ interface TableCompletionGroupProps {
   answers: Record<string, string>;
   onAnswer: (questionId: string, answer: string) => void;
   activeQuestionNumber?: number | null;
+  startIndex?: number;
 }
 
-export function TableCompletionGroup({ group, questions, answers, onAnswer, activeQuestionNumber }: TableCompletionGroupProps) {
+export function TableCompletionGroup({ group, questions, answers, onAnswer, activeQuestionNumber, startIndex = 0 }: TableCompletionGroupProps) {
   const cols = 3;
   const rows = Math.ceil(questions.length / (cols - 1));
 
@@ -31,11 +32,12 @@ export function TableCompletionGroup({ group, questions, answers, onAnswer, acti
             const rowQs = questions.slice(rIdx * (cols - 1), (rIdx + 1) * (cols - 1));
             return (
               <View key={rIdx} style={styles.dataRow}>
-                <Text style={[styles.cell, styles.cellFirst]}>{rIdx + 1}</Text>
+                <Text style={[styles.cell, styles.cellFirst]}>{startIndex + rIdx * (cols - 1) + 1}</Text>
                 {Array.from({ length: cols - 1 }).map((_, cIdx) => {
                   const q = rowQs[cIdx];
                   if (!q) return <View key={cIdx} style={[styles.cell, styles.cellEmpty]} />;
-                  const isActive = activeQuestionNumber === ((rIdx * (cols - 1)) + cIdx + 1);
+                  const globalNum = startIndex + (rIdx * (cols - 1)) + cIdx + 1;
+                  const isActive = activeQuestionNumber === globalNum;
                   return (
                     <View key={q.id} style={[styles.cell, isActive && styles.cellActive]}>
                       <TextInput

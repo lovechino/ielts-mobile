@@ -22,7 +22,16 @@ function parseOptions(group: QuestionGroupDTO): Array<{ id: string; text: string
   return [];
 }
 
-export function MatchingListeningGroup({ group, questions, answers, onAnswer, activeQuestionNumber }: MatchingListeningGroupProps) {
+interface MatchingListeningGroupProps {
+  group: QuestionGroupDTO;
+  questions: QuestionDTO[];
+  answers: Record<string, string>;
+  onAnswer: (questionId: string, answer: string) => void;
+  activeQuestionNumber?: number | null;
+  startIndex?: number;
+}
+
+export function MatchingListeningGroup({ group, questions, answers, onAnswer, activeQuestionNumber, startIndex = 0 }: MatchingListeningGroupProps) {
   const options = useMemo(() => parseOptions(group), [group.options_pool]);
 
   return (
@@ -41,10 +50,11 @@ export function MatchingListeningGroup({ group, questions, answers, onAnswer, ac
 
       <View style={styles.questions}>
         {questions.map((q, idx) => {
-          const isActive = activeQuestionNumber === idx + 1;
+          const globalNum = startIndex + idx + 1;
+          const isActive = activeQuestionNumber === globalNum;
           return (
             <View key={q.id} style={[styles.qRow, isActive && styles.qActive]}>
-              <Text style={styles.qNum}>{idx + 1}.</Text>
+              <Text style={styles.qNum}>{globalNum}.</Text>
               <Text style={styles.qText}>{q.content}</Text>
               <MatchDropdown
                 options={options}

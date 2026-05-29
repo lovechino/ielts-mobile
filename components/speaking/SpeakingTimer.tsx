@@ -6,6 +6,7 @@ interface SpeakingTimerProps {
   totalSeconds: number;
   onTimeUp?: () => void;
   visible?: boolean;
+  stopped?: boolean; // Dừng timer từ bên ngoài (khi user bấm End)
 }
 
 function formatTime(seconds: number): string {
@@ -14,7 +15,7 @@ function formatTime(seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-export function SpeakingTimer({ totalSeconds, onTimeUp, visible = true }: SpeakingTimerProps) {
+export function SpeakingTimer({ totalSeconds, onTimeUp, visible = true, stopped = false }: SpeakingTimerProps) {
   const [remaining, setRemaining] = useState(totalSeconds);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onTimeUpRef = useRef(onTimeUp);
@@ -25,6 +26,12 @@ export function SpeakingTimer({ totalSeconds, onTimeUp, visible = true }: Speaki
   }, [totalSeconds]);
 
   useEffect(() => {
+    // Dừng timer nếu stopped=true
+    if (stopped) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+
     intervalRef.current = setInterval(() => {
       setRemaining((prev) => {
         if (prev <= 1) {
@@ -38,7 +45,7 @@ export function SpeakingTimer({ totalSeconds, onTimeUp, visible = true }: Speaki
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [stopped]);
 
   if (!visible) return null;
 

@@ -45,12 +45,19 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
   const { startRecording, stopRecording, meteringValue, isRecording } = useRecorder();
   const {
     sessionId, currentPersonaId, appState, setAppState,
-    lastFeedback, setFeedback, addTurn, prefilledTopic, prefilledPart,
+    lastFeedback, setFeedback, addTurn, prefilledTopic,
+    lessonParts, currentPartIndex, setPartIndex, fullContent,
     prepTimeLeft, setPrepTimeLeft, turns,
   } = useSpeakingStore();
 
+  const currentPart = lessonParts[currentPartIndex] || 2;
+  const currentPartData = fullContent?.[`part${currentPart}`];
+  const dynamicTopic = currentPartData?.cue_card || prefilledTopic;
+
   const [submitting, setSubmitting] = useState(false);
   const [localTranscript, setLocalTranscript] = useState('');
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   const entranceAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -82,13 +89,7 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
         }
       });
     }
-  }, [lastFeedback, appState, currentPersonaId, speak]);
-
-  const updateStore = (res: any) => {
-    setLocalTranscript(res.transcript || '');
-    setFeedback(res);
-    addTurn(res);
-  };
+  }, [lastFeedback, appState, currentPersonaId, speak, turns.length]);
 
   const handleVoiceSubmission = async (uri: string) => {
     setSubmitting(true);
@@ -98,7 +99,20 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
       if (!base64 || !base64.trim()) throw new Error('EMPTY');
       if (!sessionId) return;
       const res = await submitTurn({ sessionId, audio: base64, format: Platform.OS === 'web' ? 'webm' : 'm4a' });
-      updateStore(res);
+      
+      setLocalTranscript(res.transcript || '');
+      setFeedback(res);
+      addTurn(res);
+
+      // Handle Transition command from AI
+      if (res.transition_to_part) {
+        const nextIdx = lessonParts.indexOf(res.transition_to_part);
+        if (nextIdx !== -1) {
+          setTimeout(() => {
+            setPartIndex(nextIdx);
+          }, 1500);
+        }
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message === 'EMPTY' ? 'Please speak longer.' : 'Failed to process audio.');
       setAppState('listening');
@@ -107,25 +121,42 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
     }
   };
 
-  const confirmEndSession = useCallback(() => {
-    Alert.alert(
-      'End Session',
-      'Are you sure you want to end this speaking session and see your report?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'End & View Report', style: 'destructive', onPress: () => onManualEnd?.() },
-      ]
-    );
-  }, [onManualEnd]);
+  const confirmEndSession = useCallback(async () => {
+    // On web, Alert.alert callbacks don't work — use window.confirm instead
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('End this speaking session and see your report?')
+      : await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'End Session',
+            'Are you sure you want to end this speaking session and see your report?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'End & View Report', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmed) return;
+
+    setSessionEnded(true);
+    setEnding(true);
+    if (isRecording) {
+      await stopRecording();
+    }
+    stopTTS();
+    await onManualEnd?.();
+    setEnding(false);
+  }, [onManualEnd, isRecording, stopRecording, stopTTS]);
 
   // Recording phase — no VAD, user presses mic to stop
   const handleMicPress = async () => {
     stopTTS();
     if (isRecording) {
+      // Luôn cho phép stop recording
       const uri = await stopRecording();
-      if (uri) handleVoiceSubmission(uri);
+      if (uri && !submitting) handleVoiceSubmission(uri);
     } else {
-      // 'recording' state means uninterrupted recording (no VAD auto-stop)
+      if (submitting) return;
       setAppState('recording');
       await startRecording();
     }
@@ -158,6 +189,17 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
     silenceDurationMs: 2500,
   });
 
+  if (ending) {
+    return (
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 16, fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>
+          Đang tổng hợp kết quả...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       {/* Background mesh */}
@@ -169,7 +211,7 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
         <TouchableOpacity onPress={onExit} style={styles.headerBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Peak</Text>
+        <Text style={styles.headerTitle}>Talko</Text>
         <View style={styles.headerRight}>
           {appState === 'preparing' ? (
             <PreparationTimer
@@ -182,7 +224,7 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
               onTick={setPrepTimeLeft}
             />
           ) : (
-            <SpeakingTimer totalSeconds={SPEAK_DURATION} onTimeUp={onEndSession} />
+            <SpeakingTimer totalSeconds={SPEAK_DURATION} onTimeUp={onEndSession} stopped={sessionEnded} />
           )}
           <TouchableOpacity onPress={confirmEndSession} style={styles.endBtn}>
             <Text style={styles.endBtnText}>End</Text>
@@ -194,7 +236,7 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
       <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
         {/* Cue Card — always visible */}
         <Animated.View style={{ opacity: entranceAnim, marginTop: spacing.sm }}>
-          <CueCard topic={prefilledTopic} />
+          <CueCard topic={dynamicTopic} />
         </Animated.View>
 
         {/* State-specific center area */}
@@ -240,10 +282,9 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
           <TouchableOpacity
             onPress={handleMicPress}
             style={[styles.micBtn, isRecording && styles.micBtnActive]}
-            disabled={submitting}
             activeOpacity={0.8}
           >
-            {submitting ? (
+            {submitting && !isRecording ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <FontAwesome name="microphone" size={28} color={isRecording ? '#fff' : colors.primary} />

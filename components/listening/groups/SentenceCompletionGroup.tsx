@@ -8,20 +8,21 @@ interface SentenceCompletionGroupProps {
   answers: Record<string, string>;
   onAnswer: (questionId: string, answer: string) => void;
   activeQuestionNumber?: number | null;
+  startIndex?: number;
 }
 
-export function SentenceCompletionGroup({ group, questions, answers, onAnswer, activeQuestionNumber }: SentenceCompletionGroupProps) {
+export function SentenceCompletionGroup({ group, questions, answers, onAnswer, activeQuestionNumber, startIndex = 0 }: SentenceCompletionGroupProps) {
   return (
     <View style={styles.groupCard}>
       <Text style={styles.title}>{group.title || 'Sentence Completion'}</Text>
       {group.instruction ? <Text style={styles.instruction}>{group.instruction}</Text> : null}
       <View style={styles.questions}>
         {questions.map((q, idx) => {
-          const isActive = activeQuestionNumber === idx + 1;
-          const qNum = idx + 1;
+          const globalNum = startIndex + idx + 1;
+          const isActive = activeQuestionNumber === globalNum;
           return (
             <View key={q.id} style={[styles.qRow, isActive && styles.qActive]}>
-              <Text style={styles.qNum}>{qNum}.</Text>
+              <Text style={styles.qNum}>{globalNum}.</Text>
               <Text style={styles.qText}>{q.content}</Text>
               <TextInput
                 style={[styles.input, answers[q.id] ? styles.inputFilled : null, isActive && styles.inputActive]}

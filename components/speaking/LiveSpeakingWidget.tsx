@@ -12,14 +12,15 @@ interface LiveSpeakingWidgetProps {
 }
 
 export function LiveSpeakingWidget(props: LiveSpeakingWidgetProps) {
-  const { prefilledPart } = useSpeakingStore();
+  const { lessonParts, currentPartIndex } = useSpeakingStore();
+  const currentPart = lessonParts[currentPartIndex] || 1;
 
-  switch (prefilledPart) {
+  switch (currentPart) {
     case 2:
-      return <SpeakingPart2Widget {...props} />;
+      return <SpeakingPart2Widget {...props} key={`part-${currentPartIndex}`} />;
     case 3:
-      return <SpeakingPart3Widget {...props} />;
+      return <SpeakingPart3Widget {...props} key={`part-${currentPartIndex}`} />;
     default:
-      return <SpeakingPart1Widget {...props} />;
+      return <SpeakingPart1Widget {...props} key={`part-${currentPartIndex}`} />;
   }
 }

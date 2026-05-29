@@ -69,16 +69,42 @@ export default function LessonScreen() {
     if (!id || lessonType !== 'speaking' || startedRef.current || loadingLesson || !lessonData) return;
     startedRef.current = true;
 
-    const topic = lessonData.content || lessonData.title || 'Practice speaking test';
-    const sp = lessonData.speaking_part || speakingPart;
+    const topic = lessonData.title || 'Practice speaking test';
+    // lesson_parts is the unified source of truth (replaces legacy speaking_parts / speaking_part)
+    const parts = lessonData.lesson_parts ?? (lessonData.speaking_part ? [lessonData.speaking_part] : null);
+    const firstPart = parts?.[0] ?? speakingPart;
+
+    // content may be a JSON string (structured part data) or plain text cue card.
+    // Parse safely; if plain text, wrap it so Part2Widget can use it as cue_card.
+    let parsedContent: any = null;
+    if (lessonData.content) {
+      try {
+        parsedContent = JSON.parse(lessonData.content);
+      } catch {
+        // Plain text — treat the whole content as the cue card for the first part
+        const partKey = `part${firstPart}`;
+        parsedContent = {
+          [partKey]: { cue_card: lessonData.content },
+        };
+      }
+    }
 
     setCurrentPersonaId('james');
-    setPrefill(topic, sp);
+    setPrefill(
+      topic,
+      firstPart,
+      parts ?? undefined,
+      parsedContent
+    );
 
-    startSession({ personaId: 'james', topic, part: sp })
+    startSession({
+      personaId: 'james',
+      topic,
+      part: firstPart,
+      lesson_id: lessonData.id
+    })
       .then((session) => {
         setSessionId(session.sessionId);
-        setPrefill(topic, sp);
         setAppState('speaking');
         router.replace('/speaking/session');
       })

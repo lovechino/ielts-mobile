@@ -17,9 +17,17 @@ interface AuthState {
   updateProfile: (data: Partial<Pick<UserDTO, 'full_name' | 'target_band' | 'ai_persona' | 'avatar_url'>>) => Promise<void>;
 }
 
+/** Lazy import để tránh circular dependency */
+async function getNotificationStore() {
+  const { useNotificationStore } = await import('@/stores/useNotificationStore');
+  return useNotificationStore.getState();
+}
+
 export const useAuthStore = create<AuthState>((set, get) => {
   // Register logout handler for API client's 401 interceptor
   setAuthLogoutHandler(async () => {
+    // Xóa push token trước khi clear auth
+    try { (await getNotificationStore()).unregister(); } catch {}
     await deleteSecureItem(STORAGE_KEYS.ACCESS_TOKEN);
     await deleteSecureItem(STORAGE_KEYS.REFRESH_TOKEN);
     set({ user: null, accessToken: null, authState: 'unauthenticated' });
@@ -44,6 +52,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
           try {
             const user = await apiFetch<UserDTO>('/auth/me');
             set({ user, accessToken, authState: 'authenticated' });
+            // Đăng ký push token sau khi xác thực thành công
+            getNotificationStore().then((s) => s.register()).catch(() => {});
             return;
           } catch {
             // Token expired, fall through to refresh
@@ -63,6 +73,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
             const user = await apiFetch<UserDTO>('/auth/me');
             set({ user, accessToken: res.access_token, authState: 'authenticated' });
+            getNotificationStore().then((s) => s.register()).catch(() => {});
             return;
           } catch {
             // Refresh failed
@@ -77,6 +88,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         set({ authState: 'unauthenticated' });
       }
     },
+
     loginWithGoogle: async (code: string, redirectUri?: string) => {
       const res = await apiFetch<{ token: string; user: UserDTO }>('/auth/google', {
         method: 'POST',
@@ -85,6 +97,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       });
       await setSecureItem(STORAGE_KEYS.ACCESS_TOKEN, res.token);
       set({ user: res.user, accessToken: res.token, authState: 'authenticated' });
+      getNotificationStore().then((s) => s.register()).catch(() => {});
     },
 
     login: async (email, password) => {
@@ -96,6 +109,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       await setSecureItem(STORAGE_KEYS.ACCESS_TOKEN, res.access_token);
       await setSecureItem(STORAGE_KEYS.REFRESH_TOKEN, res.refresh_token);
       set({ user: res.user, accessToken: res.access_token, authState: 'authenticated' });
+      getNotificationStore().then((s) => s.register()).catch(() => {});
     },
 
     register: async (data) => {
@@ -107,9 +121,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
       await setSecureItem(STORAGE_KEYS.ACCESS_TOKEN, res.access_token);
       await setSecureItem(STORAGE_KEYS.REFRESH_TOKEN, res.refresh_token);
       set({ user: res.user, accessToken: res.access_token, authState: 'authenticated' });
+      getNotificationStore().then((s) => s.register()).catch(() => {});
     },
 
     logout: async () => {
+      // Xóa push token trước
+      try { (await getNotificationStore()).unregister(); } catch {}
+
       const refreshToken = await getSecureItem(STORAGE_KEYS.REFRESH_TOKEN);
       if (refreshToken) {
         try {

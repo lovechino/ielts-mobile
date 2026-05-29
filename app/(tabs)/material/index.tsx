@@ -31,7 +31,7 @@ export default function MaterialScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Peak" avatarLetter="U" onLeaderboard={() => {}} />
+      <AppHeader title="Talko" avatarLetter="U" onLeaderboard={() => {}} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.pageHeader}>
           <Text style={styles.pageLabel}>Tài liệu</Text>

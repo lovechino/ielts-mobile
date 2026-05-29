@@ -10,6 +10,7 @@ interface MapLabelingGroupProps {
   answers: Record<string, string>;
   onAnswer: (questionId: string, answer: string) => void;
   activeQuestionNumber?: number | null;
+  startIndex?: number;
 }
 
 interface MarkerConfig {
@@ -37,7 +38,7 @@ function parseOptions(group: QuestionGroupDTO): Array<{ id: string; text: string
   return [];
 }
 
-export function MapLabelingGroup({ group, questions, answers, onAnswer, activeQuestionNumber }: MapLabelingGroupProps) {
+export function MapLabelingGroup({ group, questions, answers, onAnswer, activeQuestionNumber, startIndex = 0 }: MapLabelingGroupProps) {
   const { width: screenW } = useWindowDimensions();
   const { imageUrl, markers } = useMemo(() => parseConfig(group), [group.config]);
   const options = useMemo(() => parseOptions(group), [group.options_pool]);
@@ -47,10 +48,10 @@ export function MapLabelingGroup({ group, questions, answers, onAnswer, activeQu
     const map: Record<string, { qId: string; qNum: number }> = {};
     questions.forEach((q, idx) => {
       const mid = q.marker_id;
-      if (mid) map[mid] = { qId: q.id, qNum: idx + 1 };
+      if (mid) map[mid] = { qId: q.id, qNum: startIndex + idx + 1 };
     });
     return map;
-  }, [questions]);
+  }, [questions, startIndex]);
 
   return (
     <View style={styles.groupCard}>

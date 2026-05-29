@@ -51,7 +51,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Peak</Text>
+        <Text style={styles.loadingText}>Talko</Text>
       </View>
     );
   }

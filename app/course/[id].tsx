@@ -103,7 +103,9 @@ export default function CourseDetailScreen() {
                 activeOpacity={0.7}
                 onPress={() => {
                   const params = new URLSearchParams({ type: lesson.lesson_type || '' });
-                  if (lesson.speaking_part) params.set('part', String(lesson.speaking_part));
+                  // Use lesson_parts[0] for the initial part; fall back to legacy speaking_part
+                  const firstPart = lesson.lesson_parts?.[0] ?? lesson.speaking_part;
+                  if (firstPart) params.set('part', String(firstPart));
                   if (lesson.test_type) params.set('testType', lesson.test_type);
                   router.push(`/lesson/${lesson.id}?${params.toString()}`);
                 }}

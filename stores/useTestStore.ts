@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { PassageDTO, QuestionDTO, QuestionGroupDTO, ProgressResultItem } from '@/lib/api/types';
+import type { WritingAIFeedback } from '@/components/shared/ExamResultModal';
 
 export interface GroupedQuestion {
   group: QuestionGroupDTO;
@@ -19,18 +20,21 @@ export interface TestStoreState {
   isCompleted: boolean;
   results: ProgressResultItem[] | null;
   score: number | null;
+  writingFeedback: WritingAIFeedback | null;
 
   initLesson: (lessonId: string, title: string, passages: PassageDTO[], groups: GroupedQuestion[], timeLimitMinutes: number) => void;
   setAnswer: (questionId: string, answer: string) => void;
   decrementTime: () => void;
   setCurrentGroup: (index: number) => void;
   setSubmitting: (v: boolean) => void;
-  setCompleted: (results: ProgressResultItem[], score: number) => void;
+  setCompleted: (results: ProgressResultItem[], score: number, writingFeedback?: WritingAIFeedback) => void;
   getGroupAnswers: (groupId: string) => Record<string, string>;
   getAllQuestions: () => QuestionDTO[];
   getAnsweredCount: () => number;
   getTotalCount: () => number;
   resetStore: () => void;
+  /** Reset về trạng thái in-progress để làm lại bài */
+  resetForRetake: () => void;
 }
 
 export const useTestStore = create<TestStoreState>((set, get) => ({
@@ -46,6 +50,7 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
   isCompleted: false,
   results: null,
   score: null,
+  writingFeedback: null,
 
   initLesson: (lessonId, title, passages, groups, timeLimitMinutes) =>
     set({
@@ -61,6 +66,7 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
       isCompleted: false,
       results: null,
       score: null,
+      writingFeedback: null,
     }),
 
   setAnswer: (questionId, answer) =>
@@ -73,8 +79,8 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
 
   setSubmitting: (v) => set({ isSubmitting: v }),
 
-  setCompleted: (results, score) =>
-    set({ isCompleted: true, results, score, isSubmitting: false }),
+  setCompleted: (results, score, writingFeedback) =>
+    set({ isCompleted: true, results, score, writingFeedback: writingFeedback ?? null, isSubmitting: false }),
 
   getGroupAnswers: (groupId) => {
     const { answers, groups } = get();
@@ -114,5 +120,20 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
       isCompleted: false,
       results: null,
       score: null,
+      writingFeedback: null,
     }),
+
+  resetForRetake: () => {
+    const { totalSeconds } = get();
+    set({
+      answers: {},
+      remainingSeconds: totalSeconds,
+      currentGroupIndex: 0,
+      isSubmitting: false,
+      isCompleted: false,
+      results: null,
+      score: null,
+      writingFeedback: null,
+    });
+  },
 }));

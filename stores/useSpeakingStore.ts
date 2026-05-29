@@ -11,8 +11,14 @@ interface SpeakingState {
   countdown: number;
   turns: ExaminerFeedback[];
   report: SessionReport | null;
+  
+  // Multi-part fields
   prefilledTopic: string;
-  prefilledPart: number;
+  prefilledPart: number; // legacy
+  lessonParts: number[]; // e.g. [1, 2, 3]
+  currentPartIndex: number;
+  fullContent: any; // Pre-loaded JSON from lesson.content
+  
   prepTimeLeft: number;
   setSessionId: (id: string | null) => void;
   setCurrentPersonaId: (id: string) => void;
@@ -21,7 +27,11 @@ interface SpeakingState {
   setCountdown: (sec: number) => void;
   setReport: (report: SessionReport | null) => void;
   addTurn: (turn: ExaminerFeedback) => void;
-  setPrefill: (topic: string, part: number) => void;
+  
+  // Multi-part setters
+  setPrefill: (topic: string, part: number, parts?: number[], content?: any) => void;
+  setPartIndex: (index: number) => void;
+  
   setPrepTimeLeft: (sec: number) => void;
   resetStore: () => void;
 }
@@ -34,8 +44,13 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
   countdown: 10,
   turns: [],
   report: null,
+  
   prefilledTopic: '',
   prefilledPart: 1,
+  lessonParts: [1],
+  currentPartIndex: 0,
+  fullContent: null,
+  
   prepTimeLeft: 60,
 
   setSessionId: (id) => set({ sessionId: id }),
@@ -45,7 +60,16 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
   setCountdown: (sec) => set({ countdown: sec }),
   setReport: (report) => set({ report }),
   addTurn: (turn) => set((state) => ({ turns: [...state.turns, turn] })),
-  setPrefill: (topic, part) => set({ prefilledTopic: topic, prefilledPart: part }),
+  
+  setPrefill: (topic, part, parts, content) => set({ 
+    prefilledTopic: topic, 
+    prefilledPart: part,
+    lessonParts: parts || [part],
+    currentPartIndex: 0,
+    fullContent: content || null
+  }),
+  setPartIndex: (index) => set({ currentPartIndex: index }),
+  
   setPrepTimeLeft: (sec) => set({ prepTimeLeft: sec }),
   resetStore: () => set({
     sessionId: null,
@@ -56,6 +80,9 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
     report: null,
     prefilledTopic: '',
     prefilledPart: 1,
+    lessonParts: [1],
+    currentPartIndex: 0,
+    fullContent: null,
     prepTimeLeft: 60,
   }),
 }));

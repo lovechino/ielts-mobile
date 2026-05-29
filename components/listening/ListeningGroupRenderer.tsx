@@ -15,29 +15,31 @@ interface ListeningGroupRendererProps {
   answers: Record<string, string>;
   onAnswer: (questionId: string, answer: string) => void;
   activeQuestionNumber?: number | null;
+  /** Vị trí bắt đầu của group này trong toàn bộ danh sách câu hỏi (0-based) */
+  startIndex?: number;
 }
 
-export function ListeningGroupRenderer({ group, questions, answers, onAnswer, activeQuestionNumber }: ListeningGroupRendererProps) {
+export function ListeningGroupRenderer({ group, questions, answers, onAnswer, activeQuestionNumber, startIndex = 0 }: ListeningGroupRendererProps) {
   const type = group.group_type || '';
 
   switch (type) {
     case 'FORM_COMPLETION':
-      return <FormCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} />;
+      return <FormCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} startIndex={startIndex} />;
 
     case 'NOTE_COMPLETION':
-      return <NoteCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} />;
+      return <NoteCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} startIndex={startIndex} />;
 
     case 'TABLE_COMPLETION':
-      return <TableCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} />;
+      return <TableCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} startIndex={startIndex} />;
 
     case 'SENTENCE_COMPLETION':
-      return <SentenceCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} />;
+      return <SentenceCompletionGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} startIndex={startIndex} />;
 
     case 'MAP_LABELING':
-      return <MapLabelingGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} />;
+      return <MapLabelingGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} startIndex={startIndex} />;
 
     case 'MATCHING':
-      return <MatchingListeningGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} />;
+      return <MatchingListeningGroup group={group} questions={questions} answers={answers} onAnswer={onAnswer} activeQuestionNumber={activeQuestionNumber} startIndex={startIndex} />;
 
     case 'MULTIPLE_CHOICE_SINGLE':
     case 'MULTIPLE_CHOICE_MULTIPLE':

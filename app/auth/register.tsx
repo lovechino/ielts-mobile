@@ -37,7 +37,7 @@ export default function RegisterScreen() {
             <View style={styles.brandIcon}>
               <FontAwesome name="graduation-cap" size={28} color={colors.secondary} />
             </View>
-            <Text style={styles.brandName}>Peak</Text>
+            <Text style={styles.brandName}>Talko</Text>
           </View>
           <View style={styles.headerText}>
             <Text style={styles.welcomeTitle}>Create Account</Text>

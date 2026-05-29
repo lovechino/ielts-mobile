@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
 import { Screen } from '@/components/ui/Screen';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -14,6 +13,7 @@ import { API_BASE_URL } from '@/constants/config';
 WebBrowser.maybeCompleteAuthSession();
 
 const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
+const ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -25,17 +25,17 @@ export default function LoginScreen() {
   const login = useAuthStore((s) => s.login);
   const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
 
-  const redirectUri = makeRedirectUri({ scheme: 'ielts-master' });
-  console.log('Redirect URI:', redirectUri); // TODO: remove after adding to Google Cloud Console
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: WEB_CLIENT_ID,
-    redirectUri,
-    // responseType mặc định là 'code' + PKCE nhưng KHÔNG auto-exchange token
-    // Backend sẽ đảm nhiệm việc exchange code -> token dùng client_secret
-    usePKCE: false,
-    scopes: ['openid', 'profile', 'email'],
-  });
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    {
+      webClientId: WEB_CLIENT_ID,
+      androidClientId: ANDROID_CLIENT_ID,
+      usePKCE: true,
+      scopes: ['openid', 'profile', 'email'],
+    },
+    {
+      native: `com.googleusercontent.apps.${ANDROID_CLIENT_ID.replace('.apps.googleusercontent.com', '')}:/oauthredirect`,
+    }
+  );
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -54,7 +54,7 @@ export default function LoginScreen() {
   const handleGoogleCode = async (code: string) => {
     setGoogleLoading(true);
     try {
-      await loginWithGoogle(code, redirectUri);
+      await loginWithGoogle(code, request?.redirectUri ?? '');
       router.replace('/(tabs)');
     } catch (err: any) {
       Alert.alert('Google Sign-In Failed', err?.message || 'Could not authenticate with Google.');
@@ -95,7 +95,7 @@ export default function LoginScreen() {
             <View style={styles.brandIcon}>
               <FontAwesome name="graduation-cap" size={28} color={colors.secondary} />
             </View>
-            <Text style={styles.brandName}>Peak</Text>
+            <Text style={styles.brandName}>Talko</Text>
           </View>
           <View style={styles.headerText}>
             <Text style={styles.welcomeTitle}>Welcome back!</Text>

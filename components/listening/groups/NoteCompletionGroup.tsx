@@ -8,16 +8,18 @@ interface NoteCompletionGroupProps {
   answers: Record<string, string>;
   onAnswer: (questionId: string, answer: string) => void;
   activeQuestionNumber?: number | null;
+  startIndex?: number;
 }
 
-export function NoteCompletionGroup({ group, questions, answers, onAnswer, activeQuestionNumber }: NoteCompletionGroupProps) {
+export function NoteCompletionGroup({ group, questions, answers, onAnswer, activeQuestionNumber, startIndex = 0 }: NoteCompletionGroupProps) {
   return (
     <View style={styles.groupCard}>
       <Text style={styles.title}>{group.title || 'Note Completion'}</Text>
       {group.instruction ? <Text style={styles.instruction}>{group.instruction}</Text> : null}
       <View style={styles.notes}>
         {questions.map((q, idx) => {
-          const isActive = activeQuestionNumber === idx + 1;
+          const globalNum = startIndex + idx + 1;
+          const isActive = activeQuestionNumber === globalNum;
           return (
             <View key={q.id} style={[styles.noteRow, isActive && styles.noteActive]}>
               <Text style={styles.bullet}>•</Text>

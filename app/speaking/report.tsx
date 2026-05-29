@@ -149,11 +149,36 @@ export default function SpeakingReportScreen() {
 
       {report.nextSessionSuggestion && (
         <>
-          <Text style={styles.sectionTitle}>Suggestion</Text>
+          <Text style={styles.sectionTitle}>Chuyên gia nhận xét & Lộ trình</Text>
           <View style={styles.suggestionCard}>
             <FontAwesome name="lightbulb-o" size={18} color={colors.secondary} style={{ marginBottom: spacing.xs }} />
             <Text style={styles.suggestionText}>{report.nextSessionSuggestion}</Text>
           </View>
+        </>
+      )}
+
+      {/* Hiển thị lỗi ngữ pháp chi tiết từ các turns nếu có */}
+      {useSpeakingStore.getState().turns.some(t => t.grammar_errors && t.grammar_errors.length > 0) && (
+        <>
+          <Text style={styles.sectionTitle}>Phân tích lỗi Ngữ pháp chi tiết</Text>
+          {useSpeakingStore.getState().turns.flatMap((t, turnIdx) => 
+            (t.grammar_errors || []).map((err, errIdx) => (
+              <View key={`turn-${turnIdx}-err-${errIdx}`} style={styles.errorCard}>
+                <View style={styles.errorHeader}>
+                  <Text style={styles.errorIndex}>Turn {turnIdx + 1}</Text>
+                  <View style={[styles.errorTypeBadge, { backgroundColor: colors.error }]}>
+                    <Text style={styles.errorTypeText}>GRAMMAR</Text>
+                  </View>
+                </View>
+                <Text style={styles.errorLabel}>Lỗi của bạn:</Text>
+                <Text style={styles.errorExample}>"{err.original}"</Text>
+                <Text style={styles.errorLabel}>Sửa lại:</Text>
+                <Text style={styles.errorCorrection}>{err.corrected}</Text>
+                <Text style={[styles.errorLabel, { marginTop: 4 }]}>Giải thích:</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary }}>{err.explanation_vi}</Text>
+              </View>
+            ))
+          )}
         </>
       )}
 

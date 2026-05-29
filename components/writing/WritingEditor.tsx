@@ -12,9 +12,10 @@ interface WritingEditorProps {
   minWords: number;
   recommendedWords?: number;
   placeholder?: string;
+  editable?: boolean;
 }
 
-export function WritingEditor({ taskId, lessonId, minWords, recommendedWords, placeholder }: WritingEditorProps) {
+export function WritingEditor({ taskId, lessonId, minWords, recommendedWords, placeholder, editable = true }: WritingEditorProps) {
   const { drafts, wordCounts, lastSavedAt, autoSave } = useWritingStore();
   const draftText = drafts[taskId] || '';
   const wordCount = wordCounts[taskId] || 0;
@@ -63,7 +64,7 @@ export function WritingEditor({ taskId, lessonId, minWords, recommendedWords, pl
         <AutoSaveIndicator lastSavedAt={savedAt} isSaving={isSaving} />
       </View>
       <TextInput
-        style={styles.editor}
+        style={[styles.editor, !editable && styles.editorDisabled]}
         value={localText}
         onChangeText={handleChange}
         placeholder={placeholder || 'Write your essay here...'}
@@ -73,6 +74,7 @@ export function WritingEditor({ taskId, lessonId, minWords, recommendedWords, pl
         autoCapitalize="sentences"
         autoCorrect
         spellCheck
+        editable={editable}
       />
     </View>
   );
@@ -91,5 +93,9 @@ const styles = StyleSheet.create({
     color: colors.text, backgroundColor: '#fff',
     borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  editorDisabled: {
+    backgroundColor: colors.surfaceContainerLow,
+    color: colors.textSecondary,
   },
 });
