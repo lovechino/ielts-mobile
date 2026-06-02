@@ -1,36 +1,53 @@
 import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+
+/**
+ * Cross-platform storage:
+ * - Native (Android/iOS): expo-secure-store
+ * - Web: localStorage
+ *
+ * Không fallback về localStorage trên native — tránh ReferenceError.
+ */
 
 const isWeb = Platform.OS === 'web';
 
-async function getStore() {
-  if (isWeb) return localStorage;
+export async function getSecureItem(key: string): Promise<string | null> {
+  if (isWeb) {
+    try { return window.localStorage.getItem(key); } catch { return null; }
+  }
   try {
-    const SecureStore = require('expo-secure-store');
-    return SecureStore;
+    return await SecureStore.getItemAsync(key);
   } catch {
-    return localStorage;
+    return null;
   }
 }
 
-export async function getSecureItem(key: string): Promise<string | null> {
-  const store = await getStore();
-  if (store === localStorage) return store.getItem(key);
-  return store.getItemAsync(key);
-}
-
 export async function setSecureItem(key: string, value: string): Promise<void> {
-  const store = await getStore();
-  if (store === localStorage) { store.setItem(key, value); return; }
-  return store.setItemAsync(key, value);
+  if (isWeb) {
+    try { window.localStorage.setItem(key, value); } catch {}
+    return;
+  }
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch (e) {
+    console.warn('[Storage] setSecureItem failed:', e);
+  }
 }
 
 export async function deleteSecureItem(key: string): Promise<void> {
-  const store = await getStore();
-  if (store === localStorage) { store.removeItem(key); return; }
-  return store.deleteItemAsync(key);
+  if (isWeb) {
+    try { window.localStorage.removeItem(key); } catch {}
+    return;
+  }
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch (e) {
+    console.warn('[Storage] deleteSecureItem failed:', e);
+  }
 }
 
 export const STORAGE_KEYS = {
   ACCESS_TOKEN: 'auth_token',
   REFRESH_TOKEN: 'refresh_token',
+  ASSESSMENT_COMPLETED: 'assessment_completed',
 } as const;

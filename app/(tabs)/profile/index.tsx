@@ -8,6 +8,8 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import { PersonaSelector } from '@/components/ui/PersonaSelector';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
+import * as FileSystem from 'expo-file-system';
+import { deleteSecureItem } from '@/lib/storage';
 
 const PERSONAS = [
   {
@@ -61,6 +63,30 @@ export default function ProfileScreen() {
   const handleLogout = () => {
     logout();
     router.replace('/auth/login');
+  };
+
+  const handleResetDictionary = () => {
+    Alert.alert(
+      'Reset từ điển',
+      'Xóa file từ điển và tải lại từ đầu. Dữ liệu Sổ tay của bạn sẽ không bị ảnh hưởng.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const DB_PATH = `${FileSystem.documentDirectory}SQLite/dictionary.db`;
+              await FileSystem.deleteAsync(DB_PATH, { idempotent: true });
+              await deleteSecureItem('db_version');
+              Alert.alert('Thành công', 'Từ điển sẽ được tải lại khi khởi động lại app.');
+            } catch (e) {
+              Alert.alert('Lỗi', 'Không thể reset từ điển.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -130,6 +156,12 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
+
+        {/* Dev/Reset tools */}
+        <TouchableOpacity style={styles.resetDictBtn} onPress={handleResetDictionary}>
+          <FontAwesome name="refresh" size={14} color={colors.outline} />
+          <Text style={styles.resetDictText}>Reset từ điển (nếu bị lỗi)</Text>
+        </TouchableOpacity>
       </ScrollView>
     </Screen>
   );
@@ -183,4 +215,9 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: 18, fontWeight: '700', color: '#fff' },
   logoutBtn: { alignItems: 'center', paddingVertical: spacing.md },
   logoutText: { fontSize: 16, fontWeight: '600', color: colors.error },
+  resetDictBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, paddingVertical: spacing.sm,
+  },
+  resetDictText: { fontSize: 13, color: colors.outline },
 });

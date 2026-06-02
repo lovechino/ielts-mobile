@@ -12,9 +12,10 @@ type Props = {
   onLeaderboard?: () => void;
   onBack?: () => void;
   rightAction?: { label: string; onPress: () => void };
+  hideStats?: boolean;
 };
 
-export function AppHeader({ title, avatarUri, avatarLetter, streak, coins, onLeaderboard, onBack, rightAction }: Props) {
+export function AppHeader({ title, avatarUri, avatarLetter, streak, coins, onLeaderboard, onBack, rightAction, hideStats }: Props) {
   return (
     <View style={styles.header}>
       <View style={styles.left}>
@@ -34,8 +35,8 @@ export function AppHeader({ title, avatarUri, avatarLetter, streak, coins, onLea
         <Text style={styles.title}>{title}</Text>
       </View>
       <View style={styles.right}>
-        {streak !== undefined && <StreakBadge count={streak} />}
-        {coins !== undefined && (
+        {!hideStats && streak !== undefined && <StreakBadge count={streak} />}
+        {!hideStats && coins !== undefined && (
           <View style={styles.coinBadge}>
             <FontAwesome name="dollar" size={14} color={colors.tertiary} />
             <Text style={styles.coinText}>{coins}</Text>

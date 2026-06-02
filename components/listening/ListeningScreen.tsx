@@ -13,6 +13,7 @@ import { AnswerSheetPanel } from '@/components/shared/AnswerSheetPanel';
 import { SubmitModal } from '@/components/shared/SubmitModal';
 import { ExamResultModal } from '@/components/shared/ExamResultModal';
 import { ScoringQueuedScreen } from '@/components/shared/ScoringQueuedScreen';
+import { DictionaryOverlay, useDictionaryOverlay } from '@/components/shared/DictionaryOverlay';
 import { FontAwesome } from '@expo/vector-icons';
 import { submitAnswers, saveDraft } from '@/lib/api/progress';
 
@@ -24,6 +25,7 @@ interface ListeningScreenProps {
 
 export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 45 }: ListeningScreenProps) {
   const router = useRouter();
+  const showDict = useDictionaryOverlay((s) => s.show);
   const {
     initLesson, setAnswer, setSubmitting, setCompleted,
     answers, groups, setCurrentGroup,
@@ -159,6 +161,13 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{lesson.title || 'Listening Test'}</Text>
+        <TouchableOpacity
+          style={styles.dictBtn}
+          onPress={() => showDict('')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <FontAwesome name="search" size={16} color={colors.primary} />
+        </TouchableOpacity>
         <ExamTimer onTimeUp={handleTimeUp} />
       </View>
 
@@ -238,6 +247,9 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
         onDone={() => { setShowResultModal(false); router.back(); }}
         onRetake={handleRetake}
       />
+
+      {/* Dictionary overlay — tra từ nhanh trong bài nghe */}
+      <DictionaryOverlay />
     </View>
   );
 }
@@ -251,6 +263,14 @@ const styles = StyleSheet.create({
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.text },
+  dictBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryFixed,
+    borderRadius: radius.md,
+  },
   scrollArea: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingBottom: 100 },
   bottomBar: {

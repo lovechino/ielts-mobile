@@ -1,7 +1,7 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { colors, radius, spacing } from '@/theme/tokens';
 
-type StatItem = { value: string; label: string; color?: string };
+type StatItem = { value: string; label: string; color?: string; onPress?: () => void };
 
 type StatsGridProps = {
   items: StatItem[];
@@ -11,10 +11,15 @@ export function StatsGrid({ items }: StatsGridProps) {
   return (
     <View style={styles.grid}>
       {items.map((item, idx) => (
-        <View key={idx} style={styles.card}>
+        <Pressable 
+          key={idx} 
+          style={styles.card} 
+          onPress={item.onPress}
+          disabled={!item.onPress}
+        >
           <Text style={[styles.value, item.color ? { color: item.color } : undefined]}>{item.value}</Text>
           <Text style={styles.label}>{item.label}</Text>
-        </View>
+        </Pressable>
       ))}
     </View>
   );

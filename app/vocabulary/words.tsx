@@ -254,7 +254,11 @@ export default function VocabWordsScreen() {
               <Text style={[styles.tableHeaderCell, { flex: 0.8, textAlign: 'right' }]}>Thuộc</Text>
             </View>
             {visibleWords.map((w) => (
-              <View key={w.id} style={styles.tableRow}>
+              <TouchableOpacity 
+                key={w.id} 
+                style={styles.tableRow}
+                onPress={() => router.push(`/vocabulary/${w.id}`)}
+              >
                 <View style={{ flex: 2 }}>
                   <View style={styles.wordCell}>
                     <TouchableOpacity onPress={() => Speech.speak(w.word, { language: 'en' })}>
@@ -276,7 +280,7 @@ export default function VocabWordsScreen() {
                     disabled={toggling.has(w.id)}
                   />
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
 

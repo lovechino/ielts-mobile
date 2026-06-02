@@ -76,6 +76,8 @@ export interface UserDTO {
   target_band?: number | null;
   avatar_url?: string | null;
   ai_persona?: string | null;
+  coins?: number;
+  xp?: number;
   enrolled_courses?: EnrolledCourseDTO[];
 }
 

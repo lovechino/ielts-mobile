@@ -5,7 +5,10 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": ["ielts-master", "com.googleusercontent.apps.109247400665-uankemndfn8h3j8klla9b44hof4ctb0k"],
+    "scheme": [
+      "ielts-master",
+      "com.googleusercontent.apps.109247400665-uankemndfn8h3j8klla9b44hof4ctb0k"
+    ],
     "jsEngine": "jsc",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
@@ -75,7 +78,8 @@
           "androidMode": "default",
           "androidCollapsedTitle": "Talko"
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "extra": {
       "router": {

@@ -5,7 +5,7 @@ import { Screen } from '@/components/ui/Screen';
 import { ExamResultModal } from '@/components/shared/ExamResultModal';
 import { colors, spacing } from '@/theme/tokens';
 import { FontAwesome } from '@expo/vector-icons';
-import { fetchProgress } from '@/lib/api/progress';
+import { fetchProgress, fetchProgressById } from '@/lib/api/progress';
 import { fetchSpeakingSession } from '@/lib/api/speaking';
 import { useSpeakingStore } from '@/stores/useSpeakingStore';
 import type { WritingAIFeedback } from '@/components/shared/ExamResultModal';
@@ -59,13 +59,14 @@ export default function HistoryDetailScreen() {
       return;
     }
 
-    if (!lesson_id) {
-      setError('Không tìm thấy bài học.');
+    if (!progress_id) {
+      setError('Không tìm thấy kết quả.');
       setLoading(false);
       return;
     }
 
-    fetchProgress(lesson_id)
+    // Dùng progress_id để lấy đúng lần làm bài cụ thể, không phải lần mới nhất
+    fetchProgressById(progress_id)
       .then((progress) => {
         if (!progress) {
           setError('Không tìm thấy kết quả.');

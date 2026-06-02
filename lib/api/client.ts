@@ -37,6 +37,8 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   const { skipAuth, ...fetchOptions } = options;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Bypass ngrok interstitial warning page (free tier)
+    'ngrok-skip-browser-warning': 'true',
     ...(fetchOptions.headers as Record<string, string>),
   };
 
@@ -83,7 +85,10 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
     throw new Error('Session expired. Please login again.');
   }
 
-  const json = await res.json();
+  const json = await res.json().catch(() => {
+    // Server trả non-JSON (HTML error page, plain text) — wrap thành Error rõ ràng
+    throw new Error(`Server error ${res.status}: ${res.statusText || 'Non-JSON response'}`);
+  });
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || `Request failed: ${res.status}`);
   }

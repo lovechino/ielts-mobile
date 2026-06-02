@@ -1,115 +1,173 @@
-import { View, ScrollView, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { FontAwesome } from '@expo/vector-icons';
 import { Screen } from '@/components/ui/Screen';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { HeroImage } from '@/components/ui/HeroImage';
 import { colors, spacing, radius } from '@/theme/tokens';
-import { fetchVocabularyCourses } from '@/lib/api/vocabulary';
-import { getStreak } from '@/lib/api/stats';
-import type { VocabularyCourseDTO } from '@/lib/api/types';
+import { FontAwesome } from '@expo/vector-icons';
+import { useDictionaryStore } from '@/stores/useDictionaryStore';
+import { GlassCard } from '@/components/ui/GlassCard';
 
-export default function MaterialScreen() {
+export default function DictionaryScreen() {
   const router = useRouter();
-  const [courses, setCourses] = useState<VocabularyCourseDTO[]>([]);
-  const [streak, setStreak] = useState(0);
-  const [wordsToday, setWordsToday] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const { 
+    searchQuery, 
+    setSearchQuery, 
+    performSearch, 
+    searchResults, 
+    isLoading,
+    recentSearches,
+    selectWord,
+    vaultLearningCount,
+    vaultMasteredCount,
+    loadVaultCounts,
+  } = useDictionaryStore();
 
   useEffect(() => {
-    fetchVocabularyCourses().then(setCourses).catch(() => {});
-    getStreak()
-      .then((s) => {
-        setStreak(s.current_streak);
-        setWordsToday(Math.min(s.current_streak * 2, 12));
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    loadVaultCounts();
   }, []);
+
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    performSearch(text);
+  };
 
   return (
     <Screen>
-      <AppHeader title="Talko" avatarLetter="U" onLeaderboard={() => {}} />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.pageHeader}>
-          <Text style={styles.pageLabel}>Tài liệu</Text>
-          <Text style={styles.pageTitle}>Vocabulary Vault</Text>
-          <Text style={styles.pageSub}>Khám phá kho từ vựng phong phú được cá nhân hóa cho nhu cầu học tập của bạn</Text>
+      <AppHeader title="Từ điển & Sổ tay" />
+      
+      <View style={styles.container}>
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <FontAwesome name="search" size={18} color={colors.outline} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Tra cứu 100,000 từ vựng..."
+            value={searchQuery}
+            onChangeText={handleSearch}
+            placeholderTextColor={colors.outline}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => handleSearch('')}>
+              <FontAwesome name="times-circle" size={18} color={colors.outline} />
+            </TouchableOpacity>
+          )}
         </View>
-        <HeroImage
-          uri="https://lh3.googleusercontent.com/aida-public/AB6AXuB4RFIocALneuB76QeaGI8HjcvljxdK1MXEcmj2SZOQrCBdHOgio0scO1aisKDRZef9i75DRsLTlY2EXm3VvqahVDlecARjIenabfPt7js19NXyxG_GtflnFEAtVXoIo06XJjx3han7HdEvTk715oI1y5ksmmgOzjSoEwmmv9Yl67A5WUlUddQArZTcTRT4GVeMi0ktOkKrRVhsSU9FjOk8y6kkHe7MSVOZu-T6LuXN1-Ajxq0zm9DhfP-f7crl-0sdAzTR-x2pgD8"
-          badgeLabel="New Mastery Pack"
-          title="Advanced Academic Phrases"
-        />
-        {loading ? (
-          <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: spacing.xl }} />
-        ) : (
-          courses.map((vc) => (
-            <GlassCard
-              key={vc.id}
-              borderLeft={vc.structure_type === 'cefr_levels' ? colors.primary : colors.secondary}
-              style={styles.courseCard}
-            >
-              <View style={styles.courseTag}>
-                <Text style={styles.courseTagText}>{vc.structure_type === 'cefr_levels' ? 'CEFR LEVELS' : 'DIRECT TOPICS'}</Text>
-              </View>
-              <Text style={styles.courseTitle}>{vc.title}</Text>
-              {vc.description ? <Text style={styles.courseDesc}>{vc.description}</Text> : null}
-              <View style={styles.divider} />
-              <TouchableOpacity style={styles.startBtn} onPress={() => router.push(`/vocabulary/${vc.id}?structureType=${vc.structure_type}`)}>
-                <Text style={styles.startBtnText}>Bắt đầu học ngay</Text>
-                <FontAwesome name="arrow-right" size={14} color={colors.primary} />
+
+        {isLoading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
+        ) : searchQuery.length > 0 ? (
+          /* Search Results */
+          <FlatList
+            data={searchResults}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                style={styles.resultItem}
+                onPress={() => {
+                  selectWord(item.id);
+                  router.push(`/vocabulary/${item.id}`);
+                }}
+              >
+                <View>
+                  <Text style={styles.resultWord}>{item.word}</Text>
+                  <Text style={styles.resultDef} numberOfLines={1}>{item.definition_vi}</Text>
+                </View>
+                <FontAwesome name="chevron-right" size={14} color={colors.outline} />
               </TouchableOpacity>
-            </GlassCard>
-          ))
+            )}
+            contentContainerStyle={styles.listContent}
+          />
+        ) : (
+          /* History & Vault Summary */
+          <FlatList
+            ListHeaderComponent={() => (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Sổ tay của tôi</Text>
+                </View>
+                <View style={styles.vaultGrid}>
+                  <TouchableOpacity style={[styles.vaultCard, { backgroundColor: '#E1F5FE' }]} onPress={() => router.push('/vocabulary/vault')}>
+                    <Text style={styles.vaultCount}>{vaultLearningCount}</Text>
+                    <Text style={styles.vaultLabel}>Đang học</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.vaultCard, { backgroundColor: '#E8F5E9' }]} onPress={() => router.push('/vocabulary/vault')}>
+                    <Text style={styles.vaultCount}>{vaultMasteredCount}</Text>
+                    <Text style={styles.vaultLabel}>Đã thuộc</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {recentSearches.length > 0 && (
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Tìm kiếm gần đây</Text>
+                  </View>
+                )}
+              </>
+            )}
+            data={recentSearches}
+            keyExtractor={(item) => `recent-${item.id}`}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                style={styles.resultItem}
+                onPress={() => {
+                  selectWord(item.id);
+                  router.push(`/vocabulary/${item.id}`);
+                }}
+              >
+                <Text style={styles.resultWord}>{item.word}</Text>
+                <FontAwesome name="history" size={14} color={colors.outline} />
+              </TouchableOpacity>
+            )}
+            contentContainerStyle={styles.listContent}
+          />
         )}
-        <View style={styles.streakCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.streakTitle}>Daily Streak</Text>
-            <Text style={styles.streakSub}>You've mastered {wordsToday} words today!</Text>
-          </View>
-          <View style={styles.streakIcon}>
-            <FontAwesome name="fire" size={24} color="#fff" />
-          </View>
-        </View>
-      </ScrollView>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: spacing.xxl * 2, gap: spacing.md },
-  pageHeader: { gap: spacing.xs, marginBottom: spacing.sm },
-  pageLabel: { fontSize: 12, fontWeight: '700', color: colors.outline, textTransform: 'uppercase', letterSpacing: 0.5 },
-  pageTitle: { fontSize: 28, fontWeight: '700', color: colors.text },
-  pageSub: { fontSize: 14, color: colors.textSecondary },
-  courseCard: { padding: spacing.lg },
-  courseTag: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surfaceContainerHigh,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.unit,
-    borderRadius: radius.sm,
-    marginBottom: spacing.sm,
+  container: { flex: 1, padding: spacing.md },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    height: 52,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
   },
-  courseTagText: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase' },
-  courseTitle: { fontSize: 20, fontWeight: '600', color: colors.text, marginBottom: spacing.xs },
-  courseDesc: { fontSize: 14, color: colors.textSecondary, marginBottom: spacing.md },
-  divider: { height: 1, backgroundColor: 'rgba(194,198,214,0.3)', marginBottom: spacing.md },
-  startBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', gap: spacing.sm },
-  startBtnText: { fontSize: 12, fontWeight: '700', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  streakCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.primaryContainer, borderRadius: radius.lg,
-    padding: spacing.lg,
+  searchIcon: { marginRight: spacing.sm },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: '500',
   },
-  streakTitle: { fontSize: 20, fontWeight: '600', color: '#fff' },
-  streakSub: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginTop: spacing.xs },
-  streakIcon: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
+  listContent: { paddingBottom: spacing.xxl },
+  resultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
   },
+  resultWord: { fontSize: 17, fontWeight: '600', color: colors.text },
+  resultDef: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+  
+  sectionHeader: { marginTop: spacing.lg, marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+  
+  vaultGrid: { flexDirection: 'row', gap: spacing.md },
+  vaultCard: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  vaultCount: { fontSize: 24, fontWeight: '800', color: colors.text },
+  vaultLabel: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
 });

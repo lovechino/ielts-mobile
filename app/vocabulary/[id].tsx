@@ -1,189 +1,324 @@
-import { View, ScrollView, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, Modal, TextInput, KeyboardAvoidingView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
 import { Screen } from '@/components/ui/Screen';
-import { DownloadButton } from '@/components/ui/DownloadButton';
 import { colors, spacing, radius } from '@/theme/tokens';
-import { useOfflineVocab } from '@/lib/offline/useOfflineVocab';
-import { useDownloadStore } from '@/stores/useDownloadStore';
-import type { VocabularyDTO } from '@/lib/api/types';
+import { getWordDetail, addToVault, removeFromVault, isSavedInVault, updateCustomWord, deleteCustomWord } from '@/lib/offline/dictionary';
+import { useTTS } from '@/hooks/useTTS';
+import { GlassCard } from '@/components/ui/GlassCard';
 
-const VALID_CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-
-interface VocabGroup {
-  label: string;
-  value: string;
-  count: number;
-}
-
-export default function VocabGroupsScreen() {
-  const { id, structureType } = useLocalSearchParams<{ id: string; structureType?: string }>();
+export default function WordDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { words, loading, offline, error } = useOfflineVocab({ vocab_course_id: id || '', structure_type: structureType });
-  const download = useDownloadStore((s) => s.downloads[`voc:${id}`]);
-  const downloadVocab = useDownloadStore((s) => s.downloadVocab);
-  const remove = useDownloadStore((s) => s.remove);
+  const [word, setWord] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [isSaved, setIsSaved] = useState(false);
+  const { speak, isSpeaking } = useTTS();
 
-  const isWeb = Platform.OS === 'web';
-  const handleDownload = () => { if (id) downloadVocab(id); };
-  const handleDelete = () => { if (id) remove(`voc:${id}`); };
+  // Edit State
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editData, setEditData] = useState<any>(null);
 
-  const groups: VocabGroup[] = useMemo(() => {
-    if (!words.length) return [];
-    const isCefr = structureType === 'cefr_levels';
-    const field = isCefr ? 'level' : 'topic';
-    const map = new Map<string, number>();
-    for (const w of words) {
-      const key = (w as any)[field];
-      if (!key) continue;
-      if (isCefr && !VALID_CEFR_LEVELS.includes(key)) continue;
-      map.set(key, (map.get(key) || 0) + 1);
+  useEffect(() => {
+    loadData();
+  }, [id]);
+
+  async function loadData() {
+    if (!id) return;
+    setLoading(true);
+    const vocabId = parseInt(id);
+    const [data, savedStatus] = await Promise.all([
+      getWordDetail(vocabId),
+      isSavedInVault(vocabId)
+    ]);
+    setWord(data);
+    setIsSaved(savedStatus);
+    setEditData(data);
+    setLoading(false);
+  }
+
+  const handleToggleSave = async () => {
+    if (isSaved) {
+      await removeFromVault(word.id);
+      setIsSaved(false);
+    } else {
+      Alert.prompt(
+        'Lưu vào sổ tay',
+        'Nhập tên bảng từ vựng (ví dụ: IELTS, TOEIC...)',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { 
+            text: 'Lưu', 
+            onPress: async (groupName) => {
+              await addToVault(word.id, groupName || 'General');
+              setIsSaved(true);
+            }
+          }
+        ],
+        'plain-text',
+        'General'
+      );
     }
-    const order = isCefr ? VALID_CEFR_LEVELS : [];
-    return Array.from(map.entries())
-      .map(([value, count]) => ({ label: isCefr ? `CEFR ${value}` : value, value, count }))
-      .sort((a, b) => {
-        if (isCefr) return order.indexOf(a.value) - order.indexOf(b.value);
-        return a.label.localeCompare(b.label);
-      });
-  }, [words, structureType]);
+  };
 
-  const handleGroupPress = (g: VocabGroup) => {
-    const groupBy = structureType === 'cefr_levels' ? 'level' : 'topic';
-    router.push(`/vocabulary/words?courseId=${id}&groupBy=${groupBy}&groupValue=${encodeURIComponent(g.value)}`);
+  const handleUpdate = async () => {
+    if (!editData.word || !editData.definition_vi) return;
+    try {
+      await updateCustomWord(word.id, editData);
+      setIsEditModalVisible(false);
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Lỗi', e.message);
+    }
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Xác nhận xóa',
+      'Bạn có chắc muốn xóa từ vựng này khỏi hệ thống không?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { 
+          text: 'Xóa', 
+          style: 'destructive',
+          onPress: async () => {
+            await deleteCustomWord(word.id);
+            router.back();
+          }
+        }
+      ]
+    );
   };
 
   if (loading) {
     return (
       <Screen>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.primary} style={{ flex: 1 }} />
+      </Screen>
+    );
+  }
+
+  if (!word) {
+    return (
+      <Screen>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Không tìm thấy từ vựng này.</Text>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Text style={styles.backBtnText}>Quay lại</Text>
+          </TouchableOpacity>
         </View>
       </Screen>
     );
   }
 
-  if (error && !groups.length) {
-    return (
-      <Screen>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <FontAwesome name="chevron-left" size={20} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Bài học</Text>
-          <View style={{ width: 20 }} />
-        </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg }}>
-          <Text style={{ color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.md }}>{error}</Text>
-          {!isWeb && (
-            <DownloadButton
-              status={download?.status || 'idle'}
-              sizeKb={download?.sizeKb}
-              onDownload={handleDownload}
-              onDelete={handleDelete}
-            />
-          )}
-        </View>
-      </Screen>
-    );
-  }
+  const isUserWord = word.topic === 'User-Added';
 
   return (
     <Screen>
+      {/* Custom Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={{ padding: spacing.xs }}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Bài học</Text>
-        <View style={{ width: 32 }} />
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.hero}>
-          <Text style={styles.heroTitle}>Lộ trình học tập</Text>
-          <Text style={styles.heroSub}>Chọn cấp độ phù hợp để bắt đầu hành trình chinh phục IELTS.</Text>
-          {!isWeb && (
-            <DownloadButton
-              status={download?.status || 'idle'}
-              sizeKb={download?.sizeKb}
-              onDownload={handleDownload}
-              onDelete={handleDelete}
-            />
+        
+        <View style={styles.headerRight}>
+          {isUserWord && (
+            <>
+              <TouchableOpacity onPress={() => setIsEditModalVisible(true)} style={styles.iconBtn}>
+                <FontAwesome name="edit" size={20} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDelete} style={styles.iconBtn}>
+                <FontAwesome name="trash" size={20} color="#ff4757" />
+              </TouchableOpacity>
+            </>
           )}
+          <TouchableOpacity onPress={handleToggleSave} style={styles.iconBtn}>
+            <FontAwesome 
+              name={isSaved ? "bookmark" : "bookmark-o"} 
+              size={22} 
+              color={isSaved ? colors.primary : colors.text} 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Main Word Card */}
+        <View style={styles.wordHero}>
+          <Text style={styles.wordTitle}>{word.word}</Text>
+          <View style={styles.pronounceRow}>
+            <Text style={styles.ipa}>{word.pronunciation}</Text>
+            <TouchableOpacity 
+              style={[styles.audioBtn, isSpeaking && styles.audioBtnActive]} 
+              onPress={() => speak(word.word)}
+              disabled={isSpeaking}
+            >
+              <FontAwesome name="volume-up" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.posBadge}>
+            <Text style={styles.posText}>{word.part_of_speech?.toUpperCase()}</Text>
+          </View>
         </View>
 
-        {offline && (
-          <View style={styles.offlineBanner}>
-            <FontAwesome name="wifi" size={12} color="#fff" />
-            <Text style={styles.offlineBannerText}>Đang xem nội dung đã tải</Text>
+        {/* Definitions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Định nghĩa</Text>
+          <GlassCard style={styles.defCard}>
+            <Text style={styles.defEn}>{word.definition}</Text>
+            <View style={styles.divider} />
+            <Text style={styles.defVi}>{word.definition_vi}</Text>
+          </GlassCard>
+        </View>
+
+        {/* Examples */}
+        {word.example && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Ví dụ</Text>
+            <View style={styles.exampleCard}>
+              <View style={styles.exampleLine} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.exEn}>{word.example}</Text>
+                <Text style={styles.exVi}>{word.example_vi}</Text>
+              </View>
+            </View>
           </View>
         )}
 
-        {groups.length === 0 && (
-          <Text style={{ color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xl }}>
-            No lessons available.
+        {/* Action Button */}
+        <TouchableOpacity 
+          style={[styles.mainActionBtn, isSaved && styles.mainActionBtnSaved]} 
+          onPress={handleToggleSave}
+        >
+          <FontAwesome name={isSaved ? "check" : "plus"} size={16} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={styles.mainActionText}>
+            {isSaved ? "Đã lưu vào sổ tay" : "Lưu vào sổ tay"}
           </Text>
-        )}
-
-        <View style={styles.cardList}>
-          {groups.map((g) => (
-            <TouchableOpacity
-              key={g.value}
-              style={styles.groupCard}
-              onPress={() => handleGroupPress(g)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.groupCardLeft}>
-                <View style={styles.levelBox}>
-                  <Text style={styles.levelBoxText}>{g.value}</Text>
-                </View>
-                <View style={styles.groupInfo}>
-                  <Text style={styles.groupLabel}>{g.label}</Text>
-                  <Text style={styles.groupCount}>{g.count} từ vựng</Text>
-                </View>
-              </View>
-              <FontAwesome name="chevron-right" size={18} color={colors.outlineVariant} />
-            </TouchableOpacity>
-          ))}
-        </View>
+        </TouchableOpacity>
       </ScrollView>
+
+      {/* Edit Modal */}
+      <Modal visible={isEditModalVisible} animationType="slide" transparent>
+        <View style={styles.modalContainer}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Chỉnh sửa từ vựng</Text>
+              <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
+                <FontAwesome name="times" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Từ vựng *</Text>
+                <TextInput style={styles.input} value={editData?.word} onChangeText={t => setEditData((f: any) => ({ ...f, word: t }))} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Nghĩa tiếng Việt *</Text>
+                <TextInput style={[styles.input, { minHeight: 60 }]} multiline value={editData?.definition_vi} onChangeText={t => setEditData((f: any) => ({ ...f, definition_vi: t }))} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Ví dụ</Text>
+                <TextInput style={[styles.input, { minHeight: 60 }]} multiline value={editData?.example} onChangeText={t => setEditData((f: any) => ({ ...f, example: t }))} />
+              </View>
+              
+              <TouchableOpacity style={styles.saveBtn} onPress={handleUpdate}>
+                <Text style={styles.saveBtnText}>Cập nhật</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingTop: spacing.unit * 10, paddingBottom: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.unit * 10,
+    paddingBottom: spacing.sm,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl * 2, gap: spacing.lg },
-  hero: { gap: spacing.xs, marginBottom: spacing.xs },
-  heroTitle: { fontSize: 28, fontWeight: '700', color: colors.text, lineHeight: 36 },
-  heroSub: { fontSize: 16, color: colors.textSecondary, lineHeight: 24, marginBottom: spacing.sm },
+  headerRight: { flexDirection: 'row', gap: spacing.sm },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  content: { padding: spacing.lg, gap: spacing.xl, paddingBottom: spacing.xxl },
+  wordHero: { alignItems: 'center', gap: spacing.sm },
+  wordTitle: { fontSize: 42, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  pronounceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  ipa: { fontSize: 20, color: colors.primary, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  audioBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  audioBtnActive: { opacity: 0.6 },
+  posBadge: {
+    backgroundColor: colors.primary + '15',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: spacing.xs,
+  },
+  posText: { fontSize: 12, fontWeight: '700', color: colors.primary },
 
-  cardList: { gap: spacing.md },
-  groupCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff', borderRadius: radius.xl2, padding: spacing.lg,
-    borderWidth: 1, borderColor: colors.outlineVariant, borderLeftWidth: 4, borderLeftColor: colors.outlineVariant,
-  },
-  groupCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  levelBox: {
-    width: 56, height: 56,
-    backgroundColor: colors.surfaceContainerHigh, borderRadius: radius.xl,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  levelBoxText: { fontSize: 18, fontWeight: '700', color: colors.onSurfaceVariant },
-  groupInfo: { gap: spacing.unit },
-  groupLabel: { fontSize: 20, fontWeight: '600', color: colors.text, lineHeight: 28 },
-  groupCount: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+  section: { gap: spacing.sm },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginLeft: 4 },
+  defCard: { padding: spacing.lg, borderRadius: radius.xl, gap: spacing.md },
+  defEn: { fontSize: 17, color: colors.text, lineHeight: 26, fontWeight: '500' },
+  divider: { height: 1, backgroundColor: colors.border, opacity: 0.5 },
+  defVi: { fontSize: 16, color: colors.textSecondary, lineHeight: 24 },
 
-  offlineBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-    backgroundColor: colors.secondary, borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.unit,
-    alignSelf: 'flex-start',
+  exampleCard: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: 4 },
+  exampleLine: { width: 4, backgroundColor: colors.secondary, borderRadius: 2, opacity: 0.3 },
+  exEn: { fontSize: 16, color: colors.text, fontStyle: 'italic', lineHeight: 24 },
+  exVi: { fontSize: 14, color: colors.textSecondary, marginTop: 4, lineHeight: 20 },
+
+  mainActionBtn: {
+    flexDirection: 'row',
+    height: 56,
+    backgroundColor: colors.primary,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.md,
   },
-  offlineBannerText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  mainActionBtnSaved: { backgroundColor: colors.secondary },
+  mainActionText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+
+  errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+  errorText: { fontSize: 16, color: colors.textSecondary },
+  backBtn: { padding: spacing.md, backgroundColor: colors.primary, borderRadius: radius.md },
+  backBtnText: { color: '#fff', fontWeight: '600' },
+
+  // Modal Styles
+  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', height: '80%', borderTopLeftRadius: radius.xl2, borderTopRightRadius: radius.xl2 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  modalTitle: { fontSize: 18, fontWeight: '700' },
+  inputGroup: { gap: spacing.xs, marginBottom: spacing.md },
+  inputLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, fontSize: 16 },
+  saveBtn: { backgroundColor: colors.primary, padding: spacing.md, borderRadius: radius.lg, alignItems: 'center', marginTop: spacing.md },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

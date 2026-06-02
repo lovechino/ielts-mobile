@@ -8,6 +8,11 @@ export function fetchProgress(lessonId: string): Promise<ProgressDTO | null> {
   return apiFetch<ProgressDTO | null>(`/progress/${lessonId}`);
 }
 
+/** Lấy kết quả theo progress_id cụ thể — dùng cho history detail để tránh trả về lần làm mới nhất */
+export function fetchProgressById(progressId: string): Promise<ProgressDTO | null> {
+  return apiFetch<ProgressDTO | null>(`/progress/by-id/${progressId}`);
+}
+
 export function saveDraft(data: {
   lesson_id: string;
   draft_answers: Record<string, string>;

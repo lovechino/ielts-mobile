@@ -26,17 +26,25 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Trang chủ',
-          tabBarLabel: 'Trang chủ',
-          tabBarIcon: ({ color, size }) => <FontAwesome name="home" size={size} color={color} />,
+          title: 'Học tập',
+          tabBarLabel: 'Học tập',
+          tabBarIcon: ({ color, size }) => <FontAwesome name="graduation-cap" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="material/index"
         options={{
-          title: 'Tài liệu',
-          tabBarLabel: 'Tài liệu',
-          tabBarIcon: ({ color, size }) => <FontAwesome name="book" size={size} color={color} />,
+          title: 'Từ điển',
+          tabBarLabel: 'Từ điển',
+          tabBarIcon: ({ color, size }) => <FontAwesome name="search" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="practice/index"
+        options={{
+          title: 'Luyện tập',
+          tabBarLabel: 'Luyện tập',
+          tabBarIcon: ({ color, size }) => <FontAwesome name="gamepad" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

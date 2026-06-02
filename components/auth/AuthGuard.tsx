@@ -7,18 +7,20 @@ import { colors, spacing } from '@/theme/tokens';
 const AUTH_SCREENS = ['auth'];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { authState, hydrate } = useAuthStore();
+  const { authState, hydrate, hasCompletedAssessment } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
-  const hydratedRef = useRef(false);
   const navigatingRef = useRef(false);
+  const hydrateCalledRef = useRef(false);
 
   useEffect(() => {
-    if (!hydratedRef.current) {
-      hydratedRef.current = true;
+    // Chỉ gọi hydrate() một lần, và chỉ khi authState vẫn là 'loading'
+    // (tức là persist chưa rehydrate được, hoặc chưa có session trước đó)
+    if (!hydrateCalledRef.current && authState === 'loading') {
+      hydrateCalledRef.current = true;
       hydrate();
     }
-  }, [hydrate]);
+  }, [authState, hydrate]);
 
   const navigate = useCallback((to: string) => {
     if (navigatingRef.current) return;
@@ -29,7 +31,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     requestAnimationFrame(() => {
-      router.replace(to);
+      router.replace(to as any);
       navigatingRef.current = false;
     });
   }, [segments, router]);
@@ -39,14 +41,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const inAuthScreen = AUTH_SCREENS.includes(segments[0]);
     const isAuthenticated = authState === 'authenticated';
+    const inAssessment = segments.includes('assessment') || segments.includes('recommendations');
 
     if (!isAuthenticated && !inAuthScreen) {
       navigate('/auth/login');
-    } else if (isAuthenticated && inAuthScreen) {
-      navigate('/(tabs)');
+    } else if (isAuthenticated) {
+      if (inAuthScreen) {
+        navigate(hasCompletedAssessment ? '/(tabs)' : '/vocabulary/assessment');
+      } else if (!hasCompletedAssessment && !inAssessment) {
+        navigate('/vocabulary/assessment');
+      }
     }
-  }, [authState, segments, navigate]);
+  }, [authState, segments, navigate, hasCompletedAssessment]);
 
+  // Chỉ hiện loading khi thực sự đang check (chưa có cached state)
   if (authState === 'loading') {
     return (
       <View style={styles.loadingContainer}>
