@@ -147,20 +147,34 @@ export const useDailyStore = create<DailyState>((set, get) => ({
     // Kiểm tra nếu tất cả đã xong
     const allDone = newTasks.every(t => t.status === 'completed');
     if (allDone && !get().isCompleted) {
-      // Gọi API complete challenge
-      api.post('/daily/complete', { challenge_id: get().challengeId });
-      set({ isCompleted: true });
+      const challengeId = get().challengeId;
+      // Chỉ gọi API complete nếu có challengeId hợp lệ
+      if (challengeId) {
+        api.post('/daily/complete', { challenge_id: challengeId })
+          .then(() => set({ isCompleted: true }))
+          .catch((err) => {
+            console.warn('[Daily] complete failed:', err?.message);
+            // Vẫn set local completed để UX không bị stuck
+            set({ isCompleted: true });
+          });
+      } else {
+        set({ isCompleted: true });
+      }
     }
   },
 
   claimReward: async () => {
     if (!get().isCompleted || get().rewardClaimed) return;
-    
+    const challengeId = get().challengeId;
+    if (!challengeId) {
+      // Không có challenge từ server (DB rỗng) → chỉ set local
+      set({ rewardClaimed: true });
+      return;
+    }
     try {
-      const res = await api.post('/daily/claim', { challenge_id: get().challengeId });
+      const res = await api.post('/daily/claim', { challenge_id: challengeId });
       if (res.success) {
         set({ rewardClaimed: true });
-        // Có thể trigger thêm confetti hoặc notification thành công ở đây
       }
     } catch (error) {
       console.error('Claim rewards failed:', error);

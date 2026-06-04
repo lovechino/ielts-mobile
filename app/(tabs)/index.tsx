@@ -1,6 +1,7 @@
 import { View, ScrollView, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import { Screen } from '@/components/ui/Screen';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -11,7 +12,7 @@ import { colors, spacing, radius } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useStreakStore } from '@/stores/useStreakStore';
 import { FontAwesome } from '@expo/vector-icons';
-import { getMasteredCount, getVaultGroups } from '@/lib/offline/dictionary';
+import { getMasteredCount, getVaultGroups, getSystemVocabStats, getTotalWordCount, initDictionaryDB } from '@/lib/offline/dictionary';
 
 interface VocabPath {
   id: string;
@@ -26,35 +27,59 @@ interface VocabPath {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const user = useAuthStore((s) => s.user);
+  const authState = useAuthStore((s) => s.authState);
   const streak = useStreakStore((s) => s.streakCount);
   const fetchStreak = useStreakStore((s) => s.fetchStreak);
   const recordActivity = useStreakStore((s) => s.recordActivity);
   const [masteredCount, setMasteredCount] = useState(0);
-  const [customPaths, setCustomPaths] = useState<VocabPath[]>([]);
-
-  const defaultPaths: VocabPath[] = [
-    { id: 'ielts', title: 'IELTS Mastery', subtitle: 'Từ vựng Band 7.5+', icon: 'graduation-cap', color: '#6C5CE7', count: 1200, learned: 450 },
-    { id: 'toeic', title: 'TOEIC Essentials', subtitle: 'Từ vựng 900+ target', icon: 'briefcase', color: '#00B894', count: 800, learned: 120 },
-    { id: 'thpt', title: 'THPT Quốc Gia', subtitle: 'Bám sát đề minh họa', icon: 'book', color: '#F0932B', count: 1500, learned: 0 },
-  ];
+  const [totalWords, setTotalWords] = useState(0);
+  const [paths, setPaths] = useState<VocabPath[]>([]);
+  const lastLoadRef = useRef<number>(0);
 
   useEffect(() => {
-    fetchStreak();
-    recordActivity();
-    loadMasteredCount();
-    loadCustomPaths();
-  }, []);
+    if (isFocused && authState === 'authenticated') {
+      const now = Date.now();
+      // Chỉ load lại nếu đã quá 5 giây kể từ lần load cuối (Tránh spam khi switch tab)
+      if (now - lastLoadRef.current > 5000) {
+        console.log('[Home] Refreshing data...');
+        fetchStreak().catch(console.error);
+        recordActivity().catch(console.error);
+        loadData();
+        lastLoadRef.current = now;
+      }
+    }
+  }, [isFocused, authState]);
 
-  const loadMasteredCount = async () => {
-    const count = await getMasteredCount();
-    setMasteredCount(count);
-  };
-
-  const loadCustomPaths = async () => {
+  const loadData = async () => {
     try {
-      const groups = await getVaultGroups();
-      const paths: VocabPath[] = groups.map(g => ({
+      // Đảm bảo DB đã sẵn sàng
+      await initDictionaryDB();
+      
+      const [mCount, systemStats, userGroups, total] = await Promise.all([
+        getMasteredCount(),
+        getSystemVocabStats(),
+        getVaultGroups(),
+        getTotalWordCount(),
+      ]);
+      
+      setMasteredCount(mCount);
+      setTotalWords(total);
+
+      // 1. Chuyển đổi systemStats (IELTS, TOEIC...)
+      const systemPaths: VocabPath[] = systemStats.map(s => ({
+        id: s.topic,
+        title: s.topic,
+        subtitle: 'Lộ trình hệ thống',
+        icon: s.topic.toLowerCase().includes('ielts') ? 'graduation-cap' : 'book',
+        color: s.topic.toLowerCase().includes('ielts') ? '#6C5CE7' : '#00B894',
+        count: s.count,
+        learned: 0, // Cần logic đếm chi tiết sau
+      }));
+
+      // 2. Chuyển đổi userGroups (Lộ trình cá nhân)
+      const customPaths: VocabPath[] = userGroups.map(g => ({
         id: g.group_name,
         title: g.group_name,
         subtitle: 'Lộ trình của bạn',
@@ -64,17 +89,21 @@ export default function HomeScreen() {
         learned: 0,
         isCustom: true
       }));
-      setCustomPaths(paths);
+
+      setPaths([...systemPaths, ...customPaths]);
     } catch (e) {
       console.error(e);
     }
   };
 
+  const formatWordCount = (n: number) =>
+    n === 0 ? '—' : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
+
   const stats = [
-    { value: '79,827', label: 'Tổng từ', color: colors.primary, onPress: () => router.push('/vocabulary/words') },
+    { value: formatWordCount(totalWords), label: 'Tổng từ', color: colors.primary, onPress: () => router.push('/vocabulary/words') },
     { value: String(masteredCount), label: 'Đã thuộc', color: colors.secondary, onPress: () => router.push('/vocabulary/vault') },
     { value: String(streak), label: 'Streak', color: '#FF7675' },
-    { value: String(user?.coins || 0), label: 'Ví xu', color: '#FDCB6E' },
+    { value: String(user?.coins || 0), label: 'Ví xu', color: '#FDCB6E', onPress: () => router.push('/shop') },
   ];
 
   return (
@@ -149,17 +178,17 @@ export default function HomeScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <SectionHeader title="Lộ trình từ vựng" />
+            <SectionHeader title="Lộ trình học tập" />
             <TouchableOpacity 
               style={styles.addBtn}
               onPress={() => router.push('/vocabulary/add-custom')}
             >
               <FontAwesome name="plus" size={12} color="#fff" />
-              <Text style={styles.addBtnText}>Thêm từ mới</Text>
+              <Text style={styles.addBtnText}>Thêm lộ trình</Text>
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pathScroll}>
-            {[...defaultPaths, ...customPaths].map((path) => (
+            {paths.map((path) => (
               <TouchableOpacity 
                 key={path.id} 
                 style={[styles.pathCard, { backgroundColor: path.color + '10', borderColor: path.color + '30' }]}
@@ -167,7 +196,7 @@ export default function HomeScreen() {
                   if (path.isCustom) {
                     router.push(`/vocabulary/words?groupBy=group_name&groupValue=${encodeURIComponent(path.id)}`);
                   } else {
-                    router.push(`/vocabulary/${path.id}`);
+                    router.push(`/vocabulary/words?groupBy=topic&groupValue=${encodeURIComponent(path.id)}`);
                   }
                 }}
               >
@@ -184,6 +213,9 @@ export default function HomeScreen() {
                 </View>
               </TouchableOpacity>
             ))}
+            {paths.length === 0 && (
+               <Text style={{ color: colors.outline, marginLeft: spacing.lg, fontStyle: 'italic' }}>Chưa có lộ trình nào được tải...</Text>
+            )}
           </ScrollView>
         </View>
       </ScrollView>

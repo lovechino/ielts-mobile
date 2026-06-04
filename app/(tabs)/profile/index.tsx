@@ -1,4 +1,4 @@
-import { View, ScrollView, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, ScrollView, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
@@ -6,7 +6,7 @@ import { Screen } from '@/components/ui/Screen';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { PersonaSelector } from '@/components/ui/PersonaSelector';
-import { colors, spacing, radius } from '@/theme/tokens';
+import { colors, spacing, radius, shadow } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
 import * as FileSystem from 'expo-file-system';
 import { deleteSecureItem } from '@/lib/storage';
@@ -91,21 +91,45 @@ export default function ProfileScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Talko" avatarLetter={user?.full_name?.charAt(0)?.toUpperCase() || 'U'} onLeaderboard={() => {}} />
+      <AppHeader title="Hồ sơ" avatarLetter={user?.full_name?.charAt(0)?.toUpperCase() || 'U'} onLeaderboard={() => {}} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.pageHeader}>
-          <Text style={styles.pageLabel}>Hồ sơ</Text>
-          <Text style={styles.pageTitle}>Profile</Text>
+        
+        {/* Shop & Inventory Quick Access */}
+        <View style={styles.shopQuickRow}>
+           <TouchableOpacity style={[styles.shopCard, { backgroundColor: '#E1F5FE' }]} onPress={() => router.push('/shop')}>
+              <View style={[styles.shopIcon, { backgroundColor: '#03A9F4' }]}>
+                 <FontAwesome name="shopping-cart" size={20} color="#fff" />
+              </View>
+              <Text style={styles.shopCardText}>Cửa hàng</Text>
+           </TouchableOpacity>
+
+           <TouchableOpacity style={[styles.shopCard, { backgroundColor: '#F3E5F5' }]} onPress={() => router.push('/shop/inventory')}>
+              <View style={[styles.shopIcon, { backgroundColor: '#9C27B0' }]}>
+                 <FontAwesome name="archive" size={20} color="#fff" />
+              </View>
+              <Text style={styles.shopCardText}>Kho đồ</Text>
+           </TouchableOpacity>
         </View>
+
         <View style={styles.avatarSection}>
-          <View style={styles.avatarLarge}>
-            <Text style={styles.avatarLargeText}>{user?.full_name?.charAt(0)?.toUpperCase() || 'U'}</Text>
+          <View style={styles.avatarContainer}>
+             <View style={styles.avatarLarge}>
+                {user?.avatar_url ? (
+                  <Image source={{ uri: user.avatar_url }} style={styles.avatarImg} />
+                ) : (
+                  <Text style={styles.avatarLargeText}>{user?.full_name?.charAt(0)?.toUpperCase() || 'U'}</Text>
+                )}
+             </View>
+             {user?.avatar_frame && (
+               <Image source={{ uri: user.avatar_frame }} style={styles.frameImg} resizeMode="contain" />
+             )}
           </View>
-          <TouchableOpacity style={styles.editBtn}>
-            <FontAwesome name="pencil" size={14} color="#fff" />
+          <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/shop/inventory')}>
+            <FontAwesome name="magic" size={14} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.email}>{user?.email || ''}</Text>
         </View>
+
         <View style={styles.formFields}>
           <Text style={styles.fieldLabel}>Full name</Text>
           <View style={styles.inputWrap}>
@@ -176,12 +200,18 @@ const styles = StyleSheet.create({
   avatarLarge: {
     width: 96, height: 96, borderRadius: 48,
     backgroundColor: colors.primaryFixed, alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
   },
   avatarLargeText: { fontSize: 36, fontWeight: '700', color: colors.primary },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarContainer: { position: 'relative', width: 110, height: 110, alignItems: 'center', justifyContent: 'center' },
+  frameImg: { position: 'absolute', top: 0, left: 0, width: 110, height: 110, zIndex: 1 },
+  
   editBtn: {
-    position: 'absolute', bottom: 24, right: '36%',
+    position: 'absolute', bottom: 24, right: '34%', zIndex: 2,
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#fff',
   },
   email: { fontSize: 14, color: colors.textSecondary, marginTop: spacing.sm },
   formFields: { gap: spacing.sm },
@@ -215,6 +245,12 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: 18, fontWeight: '700', color: '#fff' },
   logoutBtn: { alignItems: 'center', paddingVertical: spacing.md },
   logoutText: { fontSize: 16, fontWeight: '600', color: colors.error },
+
+  shopQuickRow: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.md, marginTop: spacing.sm },
+  shopCard: { flex: 1, padding: spacing.md, borderRadius: radius.lg, alignItems: 'center', gap: 8, ...shadow.sm },
+  shopIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  shopCardText: { fontSize: 14, fontWeight: '700', color: colors.text },
+
   resetDictBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.sm, paddingVertical: spacing.sm,

@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   ActivityIndicator, ScrollView, Modal, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { Screen } from '@/components/ui/Screen';
-import { colors, radius, spacing } from '@/theme/tokens';
+import { colors, radius, spacing, shadow } from '@/theme/tokens';
 import { addCustomWordToVault, searchWords, getWordDetail } from '@/lib/offline/dictionary';
 import { useRouter } from 'expo-router';
 
@@ -13,6 +13,8 @@ export default function AddCustomWordScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  
   const [formData, setFormData] = useState({
     word: '',
     definition: '',
@@ -24,12 +26,28 @@ export default function AddCustomWordScreen() {
     group_name: 'My Course'
   });
 
-  // Tìm kiếm gợi ý khi user gõ từ
-  const handleWordChange = async (text: string) => {
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    };
+  }, []);
+
+  // Tìm kiếm gợi ý với Debounce 300ms
+  const handleWordChange = (text: string) => {
     setFormData(f => ({ ...f, word: text }));
-    if (text.length > 1) {
-      const results = await searchWords(text, 5);
-      setSuggestions(results);
+    
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    
+    if (text.trim().length > 1) {
+      searchTimeout.current = setTimeout(async () => {
+        try {
+          const results = await searchWords(text.trim(), 5);
+          setSuggestions(results);
+        } catch (e) {
+          setSuggestions([]);
+        }
+      }, 300);
     } else {
       setSuggestions([]);
     }
@@ -38,22 +56,22 @@ export default function AddCustomWordScreen() {
   // Tự động điền khi chọn gợi ý
   const handleSelectSuggestion = async (id: number) => {
     setLoading(true);
+    setSuggestions([]); // Ẩn ngay lập tức
     try {
       const detail = await getWordDetail(id);
       if (detail) {
         setFormData(f => ({
           ...f,
           word: detail.word,
-          definition: detail.definition,
-          definition_vi: detail.definition_vi,
-          pronunciation: detail.pronunciation,
-          part_of_speech: detail.part_of_speech,
-          example: detail.example,
-          example_vi: detail.example_vi
+          definition: detail.definition || '',
+          definition_vi: detail.definition_vi || '',
+          pronunciation: detail.pronunciation || '',
+          part_of_speech: detail.part_of_speech || '',
+          example: detail.example || '',
+          example_vi: detail.example_vi || ''
         }));
       }
     } finally {
-      setSuggestions([]);
       setLoading(false);
     }
   };

@@ -211,8 +211,8 @@ export default function FlashcardScreen() {
     }
 
     if (index + 1 >= cards.length) {
-      const finalXp = Math.round(score * 2);
-      const finalCoins = Math.floor(score / 5);
+      const finalXp = Math.round(score / 5);
+      const finalCoins = Math.round(score / 2);
       addRewards(finalXp, finalCoins);
       endGame();
       // Sync to server
@@ -245,6 +245,14 @@ export default function FlashcardScreen() {
             <Text style={styles.resultTitle}>Hoàn thành!</Text>
             <Text style={styles.resultSub}>{cards.length} thẻ đã ôn tập</Text>
 
+            <View style={[styles.statBox, { backgroundColor: '#F9CA2420', borderWidth: 1, borderColor: '#F9CA24', width: '100%', marginBottom: spacing.md }]}>
+                <Text style={[styles.statLbl, { color: '#B7950B' }]}>XU NHẬN ĐƯỢC</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <FontAwesome name="database" size={18} color="#F9CA24" />
+                  <Text style={[styles.statVal, { fontSize: 22, color: '#B7950B' }]}>+{coins}</Text>
+                </View>
+            </View>
+
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
                 <Text style={styles.statVal}>{easyCount}</Text>
@@ -261,7 +269,7 @@ export default function FlashcardScreen() {
             </View>
 
             <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()}>
-              <Text style={styles.doneBtnText}>Quay lại</Text>
+              <Text style={styles.doneBtnText}>Tiếp tục</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.retryBtn} onPress={() => {
               setFinished(false);

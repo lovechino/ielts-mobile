@@ -3,9 +3,10 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions
 import { useRouter } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { colors, spacing, radius } from '@/theme/tokens';
-import { getRandomWords } from '@/lib/offline/dictionary';
+import { getRandomWords, getRandomWordsByLevel } from '@/lib/offline/dictionary';
 import Animated, { FadeIn, FadeOut, SlideInRight } from 'react-native-reanimated';
 import { FontAwesome } from '@expo/vector-icons';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 const { width } = Dimensions.get('window');
 
@@ -24,6 +25,7 @@ export default function AssessmentScreen() {
   const [correctCount, setCorrectCount] = useState(0);
   const [finished, setFinished] = useState(false);
   const [options, setOptions] = useState<string[]>([]);
+  const setAssessmentCompleted = useAuthStore(s => s.setAssessmentCompleted);
 
   useEffect(() => {
     loadTestWords();
@@ -42,9 +44,18 @@ export default function AssessmentScreen() {
       const levels = ['A1', 'A2', 'B1', 'B2', 'C1'];
       let allWords: any[] = [];
       
-      // Giả lập bốc từ theo level (sau này sẽ dùng query SQL thực tế)
-      const rawWords = await getRandomWords(40); 
-      setQuestions(rawWords.slice(0, 15));
+      for (const lv of levels) {
+        const words = await getRandomWordsByLevel(lv, 3);
+        allWords = [...allWords, ...words];
+      }
+
+      // Fallback nếu DB chưa có level (tương thích ngược)
+      if (allWords.length < 5) {
+        const fallback = await getRandomWords(15);
+        allWords = fallback;
+      }
+      
+      setQuestions(allWords.sort(() => Math.random() - 0.5));
     } catch (error) {
       console.error(error);
     } finally {
@@ -72,6 +83,7 @@ export default function AssessmentScreen() {
       setCurrentIndex(prev => prev + 1);
     } else {
       setFinished(true);
+      setAssessmentCompleted(); // Đánh dấu hoàn thành ngay để AuthGuard không redirect ngược
     }
   };
 
@@ -171,7 +183,10 @@ export default function AssessmentScreen() {
         </View>
       </Animated.View>
 
-      <TouchableOpacity style={styles.skipBtn} onPress={() => setFinished(true)}>
+      <TouchableOpacity style={styles.skipBtn} onPress={() => {
+        setFinished(true);
+        setAssessmentCompleted();
+      }}>
         <Text style={styles.skipText}>Bỏ qua đánh giá</Text>
       </TouchableOpacity>
     </Screen>

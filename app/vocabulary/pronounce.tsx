@@ -9,10 +9,11 @@
  */
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, ScrollView, Dimensions,
+  ActivityIndicator, ScrollView, Dimensions, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Audio } from 'expo-av';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring,
   withRepeat, withSequence, withTiming, interpolate,
@@ -24,6 +25,8 @@ import { useRecorder } from '@/hooks/useRecorder';
 import { api } from '@/lib/api/api';
 import * as FileSystem from 'expo-file-system';
 import { useDailyStore } from '@/stores/useDailyStore';
+import { getRandomWords } from '@/lib/offline/dictionary';
+import { useTTS } from '@/hooks/useTTS';
 
 const { width } = Dimensions.get('window');
 const BAR_COUNT = 28;
@@ -212,24 +215,75 @@ type Status = 'idle' | 'recording' | 'processing' | 'success' | 'fail';
 export default function PronunciationScreen() {
   const router = useRouter();
   const { startRecording, stopRecording, isRecording, meteringValue } = useRecorder();
-  const [targetWord, setTargetWord] = useState('Extraordinary');
+  const [targetWord, setTargetWord] = useState('');
+  const [targetIpa, setTargetIpa] = useState('');
+  const [targetMeaning, setTargetMeaning] = useState('');
+  const [wordLoading, setWordLoading] = useState(true);
   const [status, setStatus] = useState<Status>('idle');
   const [feedback, setFeedback] = useState<{ accuracy: number; transcription: string } | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const completeTask = useDailyStore(s => s.completeTask);
+  const { speak, isSpeaking } = useTTS();
 
   // Pulse animation for record button
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(0);
 
-  useEffect(() => {
+  /** Lấy từ tiếp theo để luyện — ưu tiên daily task, fallback về random từ DB */
+  const loadNextWord = useCallback(async () => {
+    setWordLoading(true);
+    setFeedback(null);
+    setStatus('idle');
+    setAttempts([]);
+
+    // 1. Thử lấy từ daily speaking task
     const dailyStore = useDailyStore.getState();
     const speakingTask = dailyStore.tasks.find(t => t.type === 'speaking');
     if (speakingTask) {
       const word = speakingTask.title.split(': ')[1];
-      if (word) setTargetWord(word);
+      if (word) {
+        setTargetWord(word);
+        setTargetIpa('');
+        setTargetMeaning('');
+        setWordLoading(false);
+        return;
+      }
+    }
+
+    // 2. Fallback: random từ từ offline DB
+    try {
+      const words = await getRandomWords(20);
+      // Lọc từ có độ dài hợp lý (4-12 ký tự) để phát âm có ý nghĩa
+      const suitable = words.filter(w => w.word && w.word.length >= 4 && w.word.length <= 12);
+      const pick = suitable[Math.floor(Math.random() * suitable.length)] ?? words[0];
+      if (pick) {
+        setTargetWord(pick.word);
+        setTargetIpa(pick.pronunciation || '');
+        setTargetMeaning(pick.definition_vi || pick.definition || '');
+        // Auto-play TTS để user nghe cách đọc chuẩn
+        setTimeout(() => speak(pick.word), 600);
+      } else {
+        // DB rỗng → dùng default list
+        const defaults = ['beautiful', 'important', 'together', 'because', 'different', 'understand'];
+        const picked = defaults[Math.floor(Math.random() * defaults.length)];
+        setTargetWord(picked);
+        setTargetIpa('');
+        setTargetMeaning('');
+        setTimeout(() => speak(picked), 600);
+      }
+    } catch {
+      setTargetWord('beautiful');
+      setTargetIpa('/ˈbjuːtɪfəl/');
+      setTargetMeaning('đẹp, xinh đẹp');
+      setTimeout(() => speak('beautiful'), 600);
+    } finally {
+      setWordLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    loadNextWord();
+  }, [loadNextWord]);
 
   useEffect(() => {
     if (isRecording) {
@@ -252,41 +306,89 @@ export default function PronunciationScreen() {
     opacity: pulseOpacity.value,
   }));
 
-  const handlePressIn = async () => {
-    setStatus('recording');
-    setFeedback(null);
-    await startRecording();
-  };
+  // ── Toggle recording (tap on / tap off) ─────────────────────────────────────
+  const recordingStartedRef = useRef(false);
+  const recordingStartTimeRef = useRef<number>(0);
+  const MIN_RECORD_MS = 1000; // Tối thiểu 1 giây để Whisper có đủ dữ liệu
 
-  const handlePressOut = async () => {
-    setStatus('processing');
-    const uri = await stopRecording();
-    if (uri) await processAudio(uri);
-    else setStatus('idle');
+  const handleToggleRecord = async () => {
+    // Đang recording → dừng lại
+    if (isRecording || recordingStartedRef.current) {
+      const elapsed = Date.now() - recordingStartTimeRef.current;
+      if (elapsed < MIN_RECORD_MS) {
+        const wait = MIN_RECORD_MS - elapsed;
+        console.log(`[Pronounce] Waiting ${wait}ms for minimum audio...`);
+        await new Promise(r => setTimeout(r, wait));
+      }
+      recordingStartedRef.current = false;
+      setStatus('processing');
+      try {
+        const uri = await stopRecording();
+        if (uri) {
+          await processAudio(uri);
+        } else {
+          console.warn('[Pronounce] No audio URI');
+          setStatus('idle');
+        }
+      } catch (err) {
+        console.error('[Pronounce] Stop failed:', err);
+        setStatus('idle');
+      }
+      return;
+    }
+
+    // Chưa recording → bắt đầu
+    try {
+      const { status: permStatus } = await Audio.requestPermissionsAsync();
+      if (permStatus !== 'granted') {
+        Alert.alert('Quyền truy cập', 'Vui lòng cấp quyền Microphone để sử dụng tính năng này.');
+        return;
+      }
+      setStatus('recording');
+      setFeedback(null);
+      await startRecording();
+      recordingStartedRef.current = true;
+      recordingStartTimeRef.current = Date.now();
+    } catch (err) {
+      console.error('[Pronounce] Start failed:', err);
+      setStatus('idle');
+    }
   };
 
   const processAudio = async (uri: string) => {
+    console.log('[Pronounce] Processing audio:', uri);
     try {
       const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      const res = await api.post('/ai/pronunciation-check', {
+      console.log('[Pronounce] Audio converted to base64, length:', base64Audio.length);
+
+      // apiFetch tự động unwrap { success, data } → res là data trực tiếp
+      const res = await api.post<{
+        accuracy: number;
+        transcription: string;
+        target_text: string;
+        status: 'excellent' | 'good' | 'try_again';
+      }>('/ai/pronunciation-check', {
         audio: base64Audio,
         target_text: targetWord,
       });
 
-      if (res.success) {
-        const { accuracy, transcription } = res.data;
-        setFeedback({ accuracy, transcription });
-        setStatus(accuracy >= 0.7 ? 'success' : 'fail');
-        setAttempts(prev => [
-          { accuracy, transcription, timestamp: Date.now() },
-          ...prev.slice(0, 4), // keep last 5
-        ]);
-        if (accuracy >= 0.7) completeTask('daily-speaking');
-      } else {
-        setStatus('idle');
+      console.log('[Pronounce] API Response:', res);
+
+      const { accuracy, transcription } = res;
+      setFeedback({ accuracy, transcription });
+      setStatus(accuracy >= 0.7 ? 'success' : 'fail');
+      setAttempts(prev => [
+        { accuracy, transcription, timestamp: Date.now() },
+        ...prev.slice(0, 4),
+      ]);
+      if (accuracy >= 0.7) completeTask('daily-speaking');
+
+      // Auto-play TTS khi phát âm kém (< 50%) để user nghe lại cách đọc đúng
+      if (accuracy < 0.5) {
+        setTimeout(() => speak(targetWord), 800);
       }
     } catch (err) {
-      console.error('Process audio failed:', err);
+      console.error('[Pronounce] processAudio failed:', err);
       setStatus('idle');
     }
   };
@@ -314,24 +416,56 @@ export default function PronunciationScreen() {
         {/* Target word card */}
         <View style={styles.wordCard}>
           <Text style={styles.wordLabel}>Hãy phát âm từ:</Text>
-          <Text style={styles.targetWord}>{targetWord}</Text>
-          {bestAttempt && (
-            <View style={styles.bestBadge}>
-              <FontAwesome name="star" size={11} color="#FDCB6E" />
-              <Text style={styles.bestText}>Tốt nhất: {Math.round(bestAttempt.accuracy * 100)}%</Text>
-            </View>
+          {wordLoading ? (
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />
+          ) : (
+            <>
+              <View style={styles.wordRow}>
+                <Text style={styles.targetWord}>{targetWord}</Text>
+                {/* Nút loa — nghe cách đọc chuẩn */}
+                <TouchableOpacity
+                  style={[styles.ttsBtn, isSpeaking && styles.ttsBtnActive]}
+                  onPress={() => speak(targetWord)}
+                  disabled={isSpeaking}
+                >
+                  <FontAwesome
+                    name={isSpeaking ? 'volume-up' : 'volume-up'}
+                    size={20}
+                    color={isSpeaking ? colors.primary : colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
+              {targetIpa ? <Text style={styles.ipaText}>{targetIpa}</Text> : null}
+              {targetMeaning ? <Text style={styles.meaningText}>{targetMeaning}</Text> : null}
+            </>
           )}
+          <View style={styles.wordActions}>
+            {bestAttempt && (
+              <View style={styles.bestBadge}>
+                <FontAwesome name="star" size={11} color="#FDCB6E" />
+                <Text style={styles.bestText}>Tốt nhất: {Math.round(bestAttempt.accuracy * 100)}%</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.nextWordBtn}
+              onPress={loadNextWord}
+              disabled={status === 'recording' || status === 'processing'}
+            >
+              <FontAwesome name="random" size={13} color={colors.primary} />
+              <Text style={styles.nextWordText}>Từ khác</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Waveform */}
         <View style={styles.waveCard}>
           <Waveform metering={meteringValue} isActive={isRecording} />
           <Text style={styles.waveHint}>
-            {status === 'idle' && 'Nhấn giữ nút mic để bắt đầu'}
-            {status === 'recording' && 'Đang nghe... thả để phân tích'}
+            {status === 'idle' && 'Nhấn mic để bắt đầu'}
+            {status === 'recording' && '🔴 Đang ghi âm... nhấn ■ để dừng'}
             {status === 'processing' && 'AI đang phân tích...'}
             {status === 'success' && '✓ Phát âm tốt!'}
-            {status === 'fail' && 'Thử lại nhé, gần đúng rồi!'}
+            {status === 'fail' && 'Thử lại nhé!'}
           </Text>
         </View>
 
@@ -371,8 +505,7 @@ export default function PronunciationScreen() {
               isRecording && styles.recordingBtn,
               status === 'processing' && styles.processingBtn,
             ]}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
+            onPress={handleToggleRecord}
             disabled={status === 'processing'}
             activeOpacity={0.85}
           >
@@ -380,7 +513,7 @@ export default function PronunciationScreen() {
               <ActivityIndicator color="white" size="small" />
             ) : (
               <FontAwesome
-                name="microphone"
+                name={isRecording ? 'stop' : 'microphone'}
                 size={28}
                 color="white"
               />
@@ -388,7 +521,11 @@ export default function PronunciationScreen() {
           </TouchableOpacity>
         </View>
         <Text style={styles.recordHint}>
-          {isRecording ? 'Thả để phân tích' : 'Nhấn giữ để nói'}
+          {status === 'processing'
+            ? 'AI đang phân tích...'
+            : isRecording
+            ? 'Nhấn ■ để dừng và chấm điểm'
+            : 'Nhấn mic để bắt đầu nói'}
         </Text>
       </View>
     </Screen>
@@ -425,13 +562,61 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   wordLabel: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  wordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
   targetWord: {
     fontSize: 40,
     fontWeight: '800',
     color: colors.primary,
     textAlign: 'center',
     letterSpacing: 1,
+    flex: 1,
+    textAlign: 'center',
   },
+  ttsBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surfaceContainerLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  ttsBtnActive: {
+    backgroundColor: colors.primaryFixed,
+    borderColor: colors.primary,
+  },
+  ipaText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  meaningText: {
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  wordActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: spacing.xs,
+  },
+  nextWordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryFixed,
+  },
+  nextWordText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   bestBadge: {
     flexDirection: 'row',
     alignItems: 'center',

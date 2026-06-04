@@ -12,7 +12,7 @@ type ScreenProps = {
   safe?: boolean;
 };
 
-export function Screen({ children, scroll = false, style, padded = true, safe = false }: ScreenProps) {
+export function Screen({ children, scroll = false, style, padded = true, safe = true }: ScreenProps) {
   const edges: Edge[] = safe ? ['top', 'left', 'right'] : [];
   return (
     <SafeAreaView style={styles.safe} edges={edges}>

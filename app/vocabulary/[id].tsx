@@ -8,6 +8,28 @@ import { getWordDetail, addToVault, removeFromVault, isSavedInVault, updateCusto
 import { useTTS } from '@/hooks/useTTS';
 import { GlassCard } from '@/components/ui/GlassCard';
 
+const getLevelColor = (level: string) => {
+  switch (level?.toUpperCase()) {
+    case 'A1': return '#4cd137';
+    case 'A2': return '#44bd32';
+    case 'B1': return '#fbc531';
+    case 'B2': return '#e1b12c';
+    case 'C1': return '#e84118';
+    case 'C2': return '#c23616';
+    default: return colors.primary;
+  }
+};
+
+const parseList = (str: any) => {
+  if (!str) return [];
+  try {
+    const parsed = typeof str === 'string' ? JSON.parse(str) : str;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+};
+
 export default function WordDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -146,6 +168,20 @@ export default function WordDetailScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Main Word Card */}
         <View style={styles.wordHero}>
+          <View style={styles.badgeRow}>
+            {word.level && (
+              <View style={[styles.levelBadge, { backgroundColor: getLevelColor(word.level) }]}>
+                <Text style={styles.levelBadgeText}>{word.level}</Text>
+              </View>
+            )}
+            {word.is_academic === 1 && (
+              <View style={styles.academicBadge}>
+                <FontAwesome name="graduation-cap" size={10} color="#fff" style={{ marginRight: 4 }} />
+                <Text style={styles.academicBadgeText}>ACADEMIC</Text>
+              </View>
+            )}
+          </View>
+
           <Text style={styles.wordTitle}>{word.word}</Text>
           <View style={styles.pronounceRow}>
             <Text style={styles.ipa}>{word.pronunciation}</Text>
@@ -171,6 +207,38 @@ export default function WordDetailScreen() {
             <Text style={styles.defVi}>{word.definition_vi}</Text>
           </GlassCard>
         </View>
+
+        {/* Synonyms & Antonyms */}
+        {(word.synonyms || word.antonyms) && (
+          <View style={styles.section}>
+            <View style={styles.relationGrid}>
+              {parseList(word.synonyms).length > 0 && (
+                <View style={[styles.relationCol, { flex: 1 }]}>
+                  <Text style={styles.sectionTitle}>Đồng nghĩa</Text>
+                  <View style={styles.tagCloud}>
+                    {parseList(word.synonyms).map((s: string, i: number) => (
+                      <TouchableOpacity key={i} style={styles.tag} onPress={() => router.push(`/vocabulary/search?query=${s}`)}>
+                        <Text style={styles.tagText}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {parseList(word.antonyms).length > 0 && (
+                <View style={[styles.relationCol, { flex: 1 }]}>
+                  <Text style={styles.sectionTitle}>Trái nghĩa</Text>
+                  <View style={styles.tagCloud}>
+                    {parseList(word.antonyms).map((a: string, i: number) => (
+                      <TouchableOpacity key={i} style={[styles.tag, { borderColor: '#ffa502' }]} onPress={() => router.push(`/vocabulary/search?query=${a}`)}>
+                        <Text style={[styles.tagText, { color: '#ffa502' }]}>{a}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Examples */}
         {word.example && (
@@ -256,6 +324,24 @@ const styles = StyleSheet.create({
   },
   content: { padding: spacing.lg, gap: spacing.xl, paddingBottom: spacing.xxl },
   wordHero: { alignItems: 'center', gap: spacing.sm },
+  badgeRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs },
+  levelBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  levelBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  academicBadge: {
+    backgroundColor: '#34495e',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  academicBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   wordTitle: { fontSize: 42, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
   pronounceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   ipa: { fontSize: 20, color: colors.primary, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
@@ -288,6 +374,19 @@ const styles = StyleSheet.create({
   defEn: { fontSize: 17, color: colors.text, lineHeight: 26, fontWeight: '500' },
   divider: { height: 1, backgroundColor: colors.border, opacity: 0.5 },
   defVi: { fontSize: 16, color: colors.textSecondary, lineHeight: 24 },
+
+  relationGrid: { flexDirection: 'row', gap: spacing.md },
+  relationCol: { gap: spacing.sm },
+  tagCloud: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  tagText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
 
   exampleCard: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: 4 },
   exampleLine: { width: 4, backgroundColor: colors.secondary, borderRadius: 2, opacity: 0.3 },

@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
@@ -8,6 +8,19 @@ import { Screen } from '@/components/ui/Screen';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { API_BASE_URL } from '@/constants/config';
+import Animated, { 
+  FadeInDown, 
+  FadeInUp, 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withRepeat, 
+  withSequence, 
+  withTiming,
+  withDelay,
+  Easing
+} from 'react-native-reanimated';
+
+const { width, height } = Dimensions.get('window');
 
 // Required: completes the auth session on mobile after returning from Google
 WebBrowser.maybeCompleteAuthSession();
@@ -25,6 +38,53 @@ export default function LoginScreen() {
   const login = useAuthStore((s) => s.login);
   const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
 
+  // Animation values
+  const logoScale = useSharedValue(1);
+  const float1 = useSharedValue(0);
+  const float2 = useSharedValue(0);
+
+  useEffect(() => {
+    // Logo breathing effect
+    logoScale.value = withRepeat(
+      withSequence(
+        withTiming(1.1, { duration: 2000, easing: Easing.bezier(0.4, 0, 0.2, 1) }),
+        withTiming(1, { duration: 2000, easing: Easing.bezier(0.4, 0, 0.2, 1) })
+      ),
+      -1,
+      true
+    );
+
+    // Floating background shapes
+    float1.value = withRepeat(
+      withSequence(
+        withTiming(20, { duration: 4000 }),
+        withTiming(0, { duration: 4000 })
+      ),
+      -1,
+      true
+    );
+    float2.value = withRepeat(
+      withSequence(
+        withTiming(-30, { duration: 5000 }),
+        withTiming(0, { duration: 5000 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  const logoAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: logoScale.value }],
+  }));
+
+  const float1Style = useAnimatedStyle(() => ({
+    transform: [{ translateY: float1.value }, { translateX: float1.value * 0.5 }],
+  }));
+
+  const float2Style = useAnimatedStyle(() => ({
+    transform: [{ translateY: float2.value }, { translateX: float2.value * -0.3 }],
+  }));
+
   const [request, response, promptAsync] = Google.useAuthRequest(
     {
       webClientId: WEB_CLIENT_ID,
@@ -39,7 +99,6 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (response?.type === 'success') {
-      // Chỉ lấy authorization code, KHÔNG để client tự exchange
       const code = response.params?.code;
       if (!code) {
         Alert.alert('Google Sign-In Error', 'No authorization code returned.');
@@ -65,11 +124,8 @@ export default function LoginScreen() {
 
   const handleGooglePress = () => {
     if (Platform.OS === 'web') {
-      // Trên Web, bypass hoàn toàn popup để tránh lỗi COOP
-      // Redirect trực tiếp sang API Backend GET /auth/google
       window.location.href = `${API_BASE_URL}/auth/google`;
     } else {
-      // Trên Mobile, vẫn dùng popup AuthSession bình thường
       promptAsync();
     }
   };
@@ -89,19 +145,25 @@ export default function LoginScreen() {
 
   return (
     <Screen scroll>
+      {/* Background Decorations */}
+      <Animated.View style={[styles.bgCircle, { top: -50, right: -50, backgroundColor: colors.secondary + '15' }, float1Style]} />
+      <Animated.View style={[styles.bgCircle, { bottom: 100, left: -80, width: 200, height: 200, backgroundColor: colors.primary + '10' }, float2Style]} />
+
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <View style={styles.container}>
-          <View style={styles.brandSection}>
-            <View style={styles.brandIcon}>
+          <Animated.View entering={FadeInDown.duration(800).delay(200)} style={styles.brandSection}>
+            <Animated.View style={[styles.brandIcon, logoAnimatedStyle]}>
               <FontAwesome name="graduation-cap" size={28} color={colors.secondary} />
-            </View>
+            </Animated.View>
             <Text style={styles.brandName}>Talko</Text>
-          </View>
-          <View style={styles.headerText}>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.duration(800).delay(400)} style={styles.headerText}>
             <Text style={styles.welcomeTitle}>Welcome back!</Text>
             <Text style={styles.welcomeSub}>Sign in to continue learning</Text>
-          </View>
-          <View style={styles.formCard}>
+          </Animated.View>
+
+          <Animated.View entering={FadeInUp.duration(1000).delay(600)} style={styles.formCard}>
             <View style={styles.inputGroup}>
               <View style={styles.inputWrap}>
                 <FontAwesome name="envelope" size={18} color={colors.outline} style={styles.inputIcon} />
@@ -135,11 +197,13 @@ export default function LoginScreen() {
             <TouchableOpacity style={styles.signInBtn} onPress={handleLogin} disabled={loading}>
               <Text style={styles.signInBtnText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
             </TouchableOpacity>
+
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>or</Text>
               <View style={styles.dividerLine} />
             </View>
+
             <View style={styles.socialBtns}>
               <TouchableOpacity
                 style={[styles.socialBtn, googleLoading && styles.socialBtnDisabled]}
@@ -152,13 +216,14 @@ export default function LoginScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
-          <View style={styles.footer}>
+          </Animated.View>
+
+          <Animated.View entering={FadeInUp.duration(800).delay(1000)} style={styles.footer}>
             <Text style={styles.footerText}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/auth/register')}>
               <Text style={styles.footerLink}>Create account</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
     </Screen>
@@ -167,11 +232,19 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  bgCircle: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    zIndex: -1,
+  },
   brandSection: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
   brandIcon: {
     width: 48, height: 48, borderRadius: radius.md,
     backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(194,198,214,0.3)',
+    elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10,
   },
   brandName: { fontSize: 24, fontWeight: '600', color: colors.primary },
   headerText: { alignItems: 'center', marginBottom: spacing.xl },
@@ -182,6 +255,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: radius.xl,
     padding: spacing.xl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
     gap: spacing.lg,
+    elevation: 8, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 20,
   },
   inputGroup: { gap: spacing.xs },
   inputWrap: { position: 'relative' },
@@ -195,6 +269,7 @@ const styles = StyleSheet.create({
   signInBtn: {
     backgroundColor: colors.secondaryContainer, paddingVertical: spacing.lg,
     borderRadius: radius.full, alignItems: 'center',
+    elevation: 4, shadowColor: colors.secondary, shadowOpacity: 0.2, shadowRadius: 8,
   },
   signInBtnText: { fontSize: 18, fontWeight: '700', color: '#fff' },
   divider: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

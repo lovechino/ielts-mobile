@@ -18,6 +18,35 @@ export const resetDictionaryDBCache = () => {
   initPromise = null;
 };
 
+const createSchema = async (database: SQLite.SQLiteDatabase) => {
+  await database.execAsync(`
+    CREATE TABLE IF NOT EXISTS vocabulary (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      word TEXT NOT NULL UNIQUE,
+      definition TEXT,
+      definition_vi TEXT,
+      pronunciation TEXT,
+      part_of_speech TEXT,
+      example TEXT,
+      example_vi TEXT,
+      topic TEXT,
+      level TEXT,
+      synonyms TEXT,
+      antonyms TEXT,
+      is_priority INTEGER DEFAULT 0,
+      is_academic INTEGER DEFAULT 0
+    );
+    CREATE VIRTUAL TABLE IF NOT EXISTS vocab_fts USING fts5(
+      word,
+      content='vocabulary',
+      content_rowid='id'
+    );
+    CREATE TRIGGER IF NOT EXISTS vocab_ai AFTER INSERT ON vocabulary BEGIN
+      INSERT INTO vocab_fts(rowid, word) VALUES (new.id, new.word);
+    END;
+  `);
+};
+
 export const initDictionaryDB = async (): Promise<SQLite.SQLiteDatabase> => {
   if (initPromise) return initPromise;
 
@@ -35,66 +64,60 @@ export const initDictionaryDB = async (): Promise<SQLite.SQLiteDatabase> => {
 
     try {
       db = await SQLite.openDatabaseAsync(DB_NAME);
-      // Sanity check ngay sau khi mở
-      await db.execAsync('SELECT 1');
+      // Deep integrity check: Đảm bảo file không corrupt
+      const integrity: any = await db.getFirstAsync('PRAGMA integrity_check');
+      if (integrity['integrity_check'] !== 'ok') {
+        throw new Error('Database integrity check failed: ' + integrity['integrity_check']);
+      }
+      
+      // Kiểm tra xem table vocabulary có tồn tại không
+      const tableCheck: any = await db.getFirstAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='vocabulary'");
+      if (!tableCheck) {
+        console.log('[Dictionary] Vocabulary table missing, initializing schema...');
+        await createSchema(db);
+      }
     } catch (e) {
-      // File tồn tại nhưng corrupt hoặc không phải DB → xóa và tạo mới
-      console.warn('[Dictionary] DB invalid or corrupt, recreating...', e);
+      console.error('[Dictionary] Critical DB Error:', e);
       if (db) {
         try { await db.closeAsync(); } catch {}
         db = null;
       }
       
-      try {
-        await FileSystem.deleteAsync(DB_PATH, { idempotent: true });
-        const { deleteSecureItem } = await import('@/lib/storage');
-        await deleteSecureItem('db_version');
-      } catch {}
-      
-      // Mở lại từ đầu — SQLite sẽ tự tạo file mới trống
-      db = await SQLite.openDatabaseAsync(DB_NAME);
+      // Xóa file lỗi để system tải lại ở lần tới
+      await FileSystem.deleteAsync(DB_PATH, { idempotent: true });
+      const { deleteSecureItem } = await import('@/lib/storage');
+      await deleteSecureItem('db_version');
+      throw e; 
     }
 
-    // Tạo schema nếu file mới (chưa có tables)
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS vocabulary (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        word TEXT NOT NULL UNIQUE,
-        definition TEXT,
-        definition_vi TEXT,
-        pronunciation TEXT,
-        part_of_speech TEXT,
-        example TEXT,
-        example_vi TEXT,
-        topic TEXT,
-        level TEXT,
-        synonyms TEXT,
-        antonyms TEXT
-      );
-      CREATE VIRTUAL TABLE IF NOT EXISTS vocab_fts USING fts5(
-        word,
-        content='vocabulary',
-        content_rowid='id'
-      );
-      CREATE TRIGGER IF NOT EXISTS vocab_ai AFTER INSERT ON vocabulary BEGIN
-        INSERT INTO vocab_fts(rowid, word) VALUES (new.id, new.word);
-      END;
-    `);
+    // Luôn đảm bảo schema đầy đủ
+    await createSchema(db);
+    
+    // Migration: Đảm bảo các cột mới tồn tại...
+    // (rest of code)
+
 
     // Migration: Đảm bảo các cột mới tồn tại nếu file cũ đã có table vocabulary
-    const columns = ['topic', 'level', 'synonyms', 'antonyms'];
+    const columns = [
+      { name: 'topic', type: 'TEXT' },
+      { name: 'level', type: 'TEXT' },
+      { name: 'synonyms', type: 'TEXT' },
+      { name: 'antonyms', type: 'TEXT' },
+      { name: 'is_priority', type: 'INTEGER DEFAULT 0' },
+      { name: 'is_academic', type: 'INTEGER DEFAULT 0' }
+    ];
+
     for (const col of columns) {
       try {
-        // Kiểm tra xem cột đã tồn tại chưa bằng PRAGMA table_info
         const info: any[] = await db.getAllAsync(`PRAGMA table_info(vocabulary)`);
-        const exists = info.some((c: any) => c.name === col);
+        const exists = info.some((c: any) => c.name === col.name);
         
         if (!exists) {
-          console.log(`[Dictionary] Adding missing column: ${col}`);
-          await db.execAsync(`ALTER TABLE vocabulary ADD COLUMN ${col} TEXT;`);
+          console.log(`[Dictionary] Adding missing column: ${col.name}`);
+          await db.execAsync(`ALTER TABLE vocabulary ADD COLUMN ${col.name} ${col.type};`);
         }
       } catch (e) {
-        console.warn(`[Dictionary] Migration failed for ${col}:`, e);
+        console.warn(`[Dictionary] Migration failed for ${col.name}:`, e);
       }
     }
 
@@ -112,6 +135,7 @@ export const initDictionaryDB = async (): Promise<SQLite.SQLiteDatabase> => {
         updated_at INTEGER DEFAULT (strftime('%s', 'now'))
       );
     `);
+    console.log('[Dictionary] user_word_vault table ready');
 
     return db;
   })();
@@ -125,8 +149,8 @@ export const searchWords = async (query: string, limit = 20) => {
 
   // FTS5 Search with JOIN to get non-indexed columns (definition_vi, etc.)
   // We use rowid to link FTS table with the content table
-  const results = await database.getAllAsync<{ id: number; word: string; definition_vi: string }>(
-    `SELECT v.id, v.word, v.definition_vi 
+  const results = await database.getAllAsync<{ id: number; word: string; definition_vi: string; level: string; is_academic: number }>(
+    `SELECT v.id, v.word, v.definition_vi, v.level, v.is_academic 
      FROM vocabulary v
      JOIN vocab_fts f ON v.id = f.rowid
      WHERE f.word MATCH ? 
@@ -153,9 +177,28 @@ export const getWordDetail = async (id: number) => {
     level: string;
     synonyms: string;
     antonyms: string;
+    is_priority: number;
+    is_academic: number;
   }>(
     'SELECT * FROM vocabulary WHERE id = ?',
     [id]
+  );
+};
+
+export const getRandomWordsByLevel = async (level: string, limit = 10) => {
+  const database = await initDictionaryDB();
+  return await database.getAllAsync<{
+    id: number;
+    word: string;
+    definition: string;
+    definition_vi: string;
+    pronunciation: string;
+    part_of_speech: string;
+    level: string;
+    is_academic: number;
+  }>(
+    'SELECT id, word, definition, definition_vi, pronunciation, part_of_speech, level, is_academic FROM vocabulary WHERE level = ? ORDER BY RANDOM() LIMIT ?',
+    [level, limit]
   );
 };
 
@@ -169,9 +212,41 @@ export const getRandomWords = async (limit = 10) => {
     pronunciation: string;
     part_of_speech: string;
     level: string;
+    is_academic: number;
   }>(
-    'SELECT id, word, definition, definition_vi, pronunciation, part_of_speech, level FROM vocabulary ORDER BY RANDOM() LIMIT ?',
+    'SELECT id, word, definition, definition_vi, pronunciation, part_of_speech, level, is_academic FROM vocabulary ORDER BY RANDOM() LIMIT ?',
     [limit]
+  );
+};
+
+export const getWordsByLevel = async (level: string, limit = 50) => {
+  const database = await initDictionaryDB();
+  return await database.getAllAsync<any>(
+    'SELECT id, word, definition, definition_vi, pronunciation, part_of_speech, level, is_academic, topic FROM vocabulary WHERE level = ? LIMIT ?',
+    [level, limit]
+  );
+};
+
+export const getWordsByTopic = async (topic: string, limit = 50) => {
+  const database = await initDictionaryDB();
+  return await database.getAllAsync<any>(
+    'SELECT id, word, definition, definition_vi, pronunciation, part_of_speech, level, is_academic, topic FROM vocabulary WHERE topic = ? LIMIT ?',
+    [topic, limit]
+  );
+};
+
+export const getAcademicWords = async (limit = 50) => {
+  const database = await initDictionaryDB();
+  return await database.getAllAsync<any>(
+    'SELECT * FROM vocabulary WHERE is_academic = 1 LIMIT ?',
+    [limit]
+  );
+};
+
+export const getAllTopics = async () => {
+  const database = await initDictionaryDB();
+  return await database.getAllAsync<{ topic: string; count: number }>(
+    "SELECT topic, COUNT(*) as count FROM vocabulary WHERE topic IS NOT NULL AND topic != 'User-Added' GROUP BY topic ORDER BY count DESC"
   );
 };
 
@@ -307,6 +382,15 @@ export const getLearningCount = async () => {
   return result?.count || 0;
 };
 
+/** Tổng số từ trong bảng vocabulary (offline DB) */
+export const getTotalWordCount = async (): Promise<number> => {
+  const database = await initDictionaryDB();
+  const result = await database.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM vocabulary'
+  );
+  return result?.count || 0;
+};
+
 /** Lấy toàn bộ vault để sync lên server */
 export const getAllVaultForSync = async () => {
   const database = await initDictionaryDB();
@@ -356,13 +440,27 @@ export const restoreVaultFromServer = async (
 };
 
 export const getVocabularyBundles = async () => {
-  // Mock bundles - later this can come from a 'bundles' table or API
+  const database = await initDictionaryDB();
+  
+  // Helper to get count from DB
+  const getCount = async (where: string, params: any[] = []) => {
+    const res = await database.getFirstAsync<{ count: number }>(`SELECT COUNT(*) as count FROM vocabulary WHERE ${where}`, params);
+    return res?.count || 0;
+  };
+
+  const [b2Count, c1Count, a2Count, bizCount] = await Promise.all([
+    getCount('level = ?', ['B2']),
+    getCount('level = ? AND is_academic = 1', ['C1']),
+    getCount('level = ?', ['A2']),
+    getCount("topic = 'Work' OR topic = 'Business'", [])
+  ]);
+
   return [
     {
       id: 'ielts_core',
       title: 'IELTS 6.5+ Core',
-      description: '500 từ vựng quan trọng nhất xuất hiện trong 80% đề thi IELTS.',
-      count: 500,
+      description: 'Các từ vựng quan trọng nhất xuất hiện thường xuyên trong đề thi IELTS.',
+      count: b2Count || 500,
       level: 'B2',
       topic: 'Academic',
     },
@@ -370,7 +468,7 @@ export const getVocabularyBundles = async () => {
       id: 'academic_writing',
       title: 'Academic Writing Pro',
       description: 'Nâng cấp vốn từ nối và từ vựng học thuật cho Writing Task 2.',
-      count: 300,
+      count: c1Count || 300,
       level: 'C1',
       topic: 'Writing',
     },
@@ -378,7 +476,7 @@ export const getVocabularyBundles = async () => {
       id: 'daily_essential',
       title: 'Giao tiếp hằng ngày',
       description: 'Bộ từ vựng nền tảng A1-A2 cho người mới bắt đầu.',
-      count: 800,
+      count: a2Count || 800,
       level: 'A2',
       topic: 'General',
     },
@@ -386,7 +484,7 @@ export const getVocabularyBundles = async () => {
       id: 'business_english',
       title: 'Tiếng Anh Công sở',
       description: 'Từ vựng chuyên sâu về họp hành, đàm phán và email.',
-      count: 400,
+      count: bizCount || 400,
       level: 'B1',
       topic: 'Business',
     }
@@ -491,6 +589,43 @@ export const deleteCustomWord = async (id: number) => {
     await database.runAsync('DELETE FROM vocabulary WHERE id = ?', [id]);
     await database.runAsync('DELETE FROM vocab_fts WHERE rowid = ?', [id]);
   }
+};
+
+export const getSystemVocabStats = async () => {
+  const database = await initDictionaryDB();
+  // Lấy danh sách các topic lớn và số lượng từ tương ứng
+  // Chúng ta loại trừ 'User-Added' vì đó là phần custom
+  return await database.getAllAsync<{ topic: string; count: number }>(
+    "SELECT topic, COUNT(*) as count FROM vocabulary WHERE topic != 'User-Added' AND topic IS NOT NULL GROUP BY topic HAVING count > 10"
+  );
+};
+
+export const toggleMasteredStatus = async (vocabId: number) => {
+  const database = await initDictionaryDB();
+  
+  // Sử dụng transaction để đảm bảo tính nhất quán (Atomic)
+  return await database.withTransactionAsync(async () => {
+    const current = await database.getFirstAsync<{ status: string }>(
+      'SELECT status FROM user_word_vault WHERE vocab_id = ?',
+      [vocabId]
+    );
+
+    if (current) {
+      const newStatus = current.status === 'mastered' ? 'learning' : 'mastered';
+      await database.runAsync(
+        "UPDATE user_word_vault SET status = ?, updated_at = (strftime('%s', 'now')) WHERE vocab_id = ?",
+        [newStatus, vocabId]
+      );
+      return newStatus;
+    } else {
+      const id = Crypto.randomUUID();
+      await database.runAsync(
+        'INSERT INTO user_word_vault (id, vocab_id, status, group_name) VALUES (?, ?, ?, ?)',
+        [id, vocabId, 'mastered', 'General']
+      );
+      return 'mastered';
+    }
+  });
 };
 
 export const addBundleToVault = async (bundleId: string, groupName: string) => {

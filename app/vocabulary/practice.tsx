@@ -68,8 +68,11 @@ export default function PracticeScreen() {
     for (const word of data) {
       await updateSRS(word.id, true);
     }
+    const finalXp = Math.floor(score / 5);
+    const finalCoins = Math.floor(score / 2);
+    addRewards(finalXp, finalCoins);
+    syncRewards(finalXp, finalCoins);
     setFinished(true);
-    addRewards(score * 2, Math.floor(score / 5));
     endGame();
   };
 
@@ -79,8 +82,11 @@ export default function PracticeScreen() {
     if (currentIndex + 1 < data.length) {
       setCurrentIndex(currentIndex + 1);
     } else {
+      const finalXp = Math.floor(score / 5);
+      const finalCoins = Math.floor(score / 2);
+      addRewards(finalXp, finalCoins);
+      syncRewards(finalXp, finalCoins);
       setFinished(true);
-      addRewards(score * 2, Math.floor(score / 5));
       endGame();
     }
   };
@@ -103,6 +109,16 @@ export default function PracticeScreen() {
           <Text style={styles.resultSubtitle}>Bạn đã hoàn thành thử thách</Text>
           
           <View style={styles.statsRow}>
+            <View style={[styles.statBox, { backgroundColor: '#F9CA2420', borderWidth: 1, borderColor: '#F9CA24' }]}>
+              <Text style={[styles.statLabel, { color: '#B7950B' }]}>XU NHẬN ĐƯỢC</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <FontAwesome name="database" size={20} color="#F9CA24" />
+                <Text style={[styles.statValue, { fontSize: 24, color: '#B7950B' }]}>+{coins}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.statsRow}>
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>ĐIỂM SỐ</Text>
               <Text style={styles.statValue}>{Math.floor(score)}</Text>
@@ -111,17 +127,13 @@ export default function PracticeScreen() {
               <Text style={styles.statLabel}>KINH NGHIỆM</Text>
               <Text style={[styles.statValue, { color: colors.primary }]}>+{Math.floor(xp)} XP</Text>
             </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>XU NHẬN ĐƯỢC</Text>
-              <Text style={[styles.statValue, { color: '#F9CA24' }]}>+{coins}</Text>
-            </View>
           </View>
 
           <TouchableOpacity 
             style={styles.btnPrimary}
             onPress={() => router.back()}
           >
-            <Text style={styles.btnText}>Quay lại</Text>
+            <Text style={styles.btnText}>Tiếp tục</Text>
           </TouchableOpacity>
         </View>
       </Screen>

@@ -8,6 +8,18 @@ import { FontAwesome } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useAuthStore } from '@/stores/useAuthStore';
 
+const getLevelColor = (level: string) => {
+  switch (level?.toUpperCase()) {
+    case 'A1': return '#4cd137';
+    case 'A2': return '#44bd32';
+    case 'B1': return '#fbc531';
+    case 'B2': return '#e1b12c';
+    case 'C1': return '#e84118';
+    case 'C2': return '#c23616';
+    default: return colors.primary;
+  }
+};
+
 export default function RecommendationsScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -45,6 +57,7 @@ export default function RecommendationsScreen() {
     setTimeout(async () => {
       try {
         await addBundleToVault(bundle.id, bundle.title);
+        setAssessmentCompleted(); // Đảm bảo đã đánh dấu hoàn thành bài test
         setUnlocking(null);
         Alert.alert('Thành công', `Đã thêm ${bundle.title} vào Sổ tay của bạn.`, [
           { text: 'Học ngay', onPress: () => router.push('/vocabulary/vault') },
@@ -91,8 +104,8 @@ export default function RecommendationsScreen() {
           >
             <View style={styles.bundleInfo}>
               <View style={styles.tagRow}>
-                <View style={[styles.levelTag, { backgroundColor: colors.primary + '15' }]}>
-                  <Text style={styles.levelTagText}>{bundle.level}</Text>
+                <View style={[styles.levelTag, { backgroundColor: getLevelColor(bundle.level) + '15' }]}>
+                  <Text style={[styles.levelTagText, { color: getLevelColor(bundle.level) }]}>{bundle.level}</Text>
                 </View>
                 <View style={[styles.topicTag, { backgroundColor: colors.secondary + '15' }]}>
                   <Text style={styles.topicTagText}>{bundle.topic}</Text>

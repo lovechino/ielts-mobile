@@ -1,82 +1,106 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Platform, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, View, StyleSheet, Text, Dimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
-import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Font from 'expo-font';
 import { FontAwesome } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { AuthGuard } from '@/components/auth/AuthGuard';
-import { handleDeepLink } from '@/lib/deeplink';
-import { DictionaryDownloadModal } from '@/components/shared/DictionaryDownloadModal';
 import { useDownloadStore } from '@/stores/useDownloadStore';
 import { useVaultSyncStore } from '@/stores/useVaultSyncStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { getSecureItem, deleteSecureItem, STORAGE_KEYS } from '@/lib/storage';
+import { getSecureItem, deleteSecureItem } from '@/lib/storage';
 import { DICT_INITIAL_URL, DICT_INITIAL_VERSION } from '@/constants/config';
+import { colors } from '@/theme/tokens';
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withTiming, 
+  withSpring, 
+  withSequence, 
+  withDelay,
+  runOnJS,
+  interpolate,
+} from 'react-native-reanimated';
+
+const { width, height } = Dimensions.get('window');
 
 // Polyfill for findLast and findLastIndex (Required for some older Hermes engines)
 if (!Array.prototype.findLast) {
-  Array.prototype.findLast = function (predicate: any) {
+  Array.prototype.findLast = function(predicate: any, thisArg?: any) {
     for (let i = this.length - 1; i >= 0; i--) {
-      if (predicate(this[i], i, this)) return this[i];
+      if (predicate.call(thisArg, this[i], i, this)) return this[i];
     }
     return undefined;
   };
 }
 if (!Array.prototype.findLastIndex) {
-  Array.prototype.findLastIndex = function (predicate: any) {
+  Array.prototype.findLastIndex = function(predicate: any, thisArg?: any) {
     for (let i = this.length - 1; i >= 0; i--) {
-      if (predicate(this[i], i, this)) return i;
+      if (predicate.call(thisArg, this[i], i, this)) return i;
     }
     return -1;
   };
 }
 
-// Giữ màn hình Splash cho đến khi chúng ta tải xong tài nguyên
-SplashScreen.preventAutoHideAsync();
+// Ẩn splash native càng sớm càng tốt
+SplashScreen.hideAsync();
 
 export default function RootLayout() {
   const [appIsReady, setAppIsReady] = useState(false);
-  const router = useRouter();
+  const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+
+  // Animation Values
+  const catX = useSharedValue(-100);
+  const catY = useSharedValue(height / 2 + 100);
+  const catRotate = useSharedValue(-45);
+  const brandScale = useSharedValue(0);
+  const brandOpacity = useSharedValue(0);
+  const splashOpacity = useSharedValue(1);
+
   const startDownload = useDownloadStore(s => s.startDownload);
   const checkUpdate = useDownloadStore(s => s.checkUpdate);
   const autoSync = useVaultSyncStore(s => s.autoSync);
   const authState = useAuthStore(s => s.authState);
 
-  // Vault auto-sync khi user đăng nhập thành công (premium only — store handles tier check)
+  // 1. Chạy Animation ngay khi component mount
   useEffect(() => {
-    if (authState === 'authenticated') {
-      autoSync();
-    }
-  }, [authState]);
+    // Chữ Talko hiện ra
+    brandOpacity.value = withTiming(1, { duration: 800 });
+    brandScale.value = withSpring(1);
 
+    // Mèo bay vào
+    catX.value = withDelay(400, withSpring(width / 2 - 20, { damping: 12 }));
+    catY.value = withDelay(400, withSpring(height / 2 - 60, { damping: 12 }));
+    catRotate.value = withDelay(400, withSpring(0));
+
+    // Hiệu ứng nảy và ẩn splash sau 2.2s
+    setTimeout(() => {
+      brandScale.value = withSequence(withTiming(1.2, { duration: 150 }), withSpring(1));
+    }, 1400);
+
+    setTimeout(() => {
+      splashOpacity.value = withTiming(0, { duration: 800 }, (finished) => {
+        if (finished) runOnJS(setShowAnimatedSplash)(false);
+      });
+    }, 2200);
+  }, []);
+
+  // 2. Load tài nguyên trong background
   useEffect(() => {
     async function prepare() {
       try {
-        // 1. Tải trước các Font và Icons
-        await Font.loadAsync({
-          ...FontAwesome.font,
-        });
-
-        // 2. Kiểm tra dữ liệu từ điển (Cơ chế TFlat)
+        await Font.loadAsync({ ...FontAwesome.font });
         const dbVersion = await getSecureItem('db_version');
         if (!dbVersion) {
-          // Lần đầu cài app — tải full DB từ GitHub repo vocabulary
           await startDownload(DICT_INITIAL_URL, DICT_INITIAL_VERSION);
         } else {
-          // Đã có DB — pre-validate trước khi check update
-          // Nếu file corrupt, initDictionaryDB sẽ tự xóa và reset db_version
           try {
             const { initDictionaryDB } = await import('@/lib/offline/dictionary');
             await initDictionaryDB();
-            // DB OK → check update trong background
             checkUpdate();
           } catch {
-            // Corrupt không recover được → xóa version và tải lại
             await deleteSecureItem('db_version');
             await startDownload(DICT_INITIAL_URL, DICT_INITIAL_VERSION);
           }
@@ -87,87 +111,85 @@ export default function RootLayout() {
         setAppIsReady(true);
       }
     }
-
     prepare();
   }, []);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (appIsReady) {
-      // Ẩn màn hình Splash khi mọi thứ đã sẵn sàng
-      await SplashScreen.hideAsync();
-    }
-  }, [appIsReady]);
-
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const handler = (e: ErrorEvent) => {
-      if (e.message?.includes('disconnected port')) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      }
-    };
-    window.addEventListener('error', handler, true);
-    return () => window.removeEventListener('error', handler, true);
-  }, []);
+    if (authState === 'authenticated') autoSync();
+  }, [authState]);
 
-  useEffect(() => {
-    // Xử lý deep link khi app đang chạy (foreground)
-    const subscription = Linking.addEventListener('url', ({ url }) => {
-      handleDeepLink(url, router);
-    });
+  const splashStyle = useAnimatedStyle(() => ({
+    opacity: splashOpacity.value,
+    transform: [{ scale: interpolate(splashOpacity.value, [0, 1], [1.1, 1]) }]
+  }));
 
-    // Xử lý deep link khi app được mở từ trạng thái closed/background
-    Linking.getInitialURL().then((url) => {
-      if (url) handleDeepLink(url, router);
-    });
+  const brandStyle = useAnimatedStyle(() => ({
+    opacity: brandOpacity.value,
+    transform: [{ scale: brandScale.value }]
+  }));
 
-    return () => subscription.remove();
-  }, [router]);
-
-  useEffect(() => {
-    // Xử lý tap vào push notification
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as Record<string, any>;
-      if (!data) return;
-
-      switch (data.type) {
-        case 'scoring_complete':
-        case 'scoring_failed':
-          // Navigate đến tab Lịch sử để user xem kết quả
-          router.push('/(tabs)/test');
-          break;
-        default:
-          if (data.lesson_id) {
-            router.push(`/lesson/${data.lesson_id}?type=${data.lesson_type || 'writing'}`);
-          }
-      }
-    });
-
-    return () => sub.remove();
-  }, [router]);
-
-  if (!appIsReady) {
-    return null;
-  }
+  const catStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: catX.value },
+      { translateY: catY.value },
+      { rotate: `${catRotate.value}deg` }
+    ]
+  }));
 
   return (
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <AuthGuard>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="auth/login" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="auth/register" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="course/[id]" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="lesson/[id]" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="vocabulary/[id]" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="vocabulary/words" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="speaking/session" options={{ animation: 'slide_from_bottom' }} />
-          <Stack.Screen name="speaking/select" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="speaking/report" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="history/[progress_id]" options={{ animation: 'slide_from_right' }} />
-        </Stack>
-      </AuthGuard>
+    <View style={{ flex: 1 }}>
+      {/* Nội dung chính chỉ hiện khi load xong, nhưng được che bởi Overlay */}
+      {appIsReady && (
+        <AuthGuard>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="history/[progress_id]" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="shop/index" options={{ title: 'Cửa hàng', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="shop/inventory" options={{ title: 'Kho đồ', animation: 'slide_from_right' }} />
+          </Stack>
+        </AuthGuard>
+      )}
+
+      {/* Overlay Animation Splash luôn hiện ngay từ đầu */}
+      {showAnimatedSplash && (
+        <Animated.View style={[StyleSheet.absoluteFill, styles.splashOverlay, splashStyle]} pointerEvents="none">
+          <View style={styles.centerContainer}>
+             <Animated.View style={brandStyle}>
+                <Text style={styles.splashBrand}>Talko</Text>
+             </Animated.View>
+             <Animated.View style={[styles.catContainer, catStyle]}>
+                <FontAwesome name="paw" size={40} color={colors.secondary} />
+             </Animated.View>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  splashOverlay: {
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  centerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  splashBrand: {
+    fontSize: 48,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: -1,
+  },
+  catContainer: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  }
+});

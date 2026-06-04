@@ -5,9 +5,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { Screen } from '@/components/ui/Screen';
 import { LearningModeCard } from '@/components/ui/LearningModeCard';
 import { colors, spacing, radius } from '@/theme/tokens';
-import { useOfflineVocab } from '@/lib/offline/useOfflineVocab';
-import { updateVocabProgress } from '@/lib/api/vocabulary';
-import type { VocabularyDTO } from '@/lib/api/types';
+import { getAllVaultWords, getRandomWords, toggleMasteredStatus, getWordsByLevel, getWordsByTopic } from '@/lib/offline/dictionary';
 import * as Speech from 'expo-speech';
 
 const QUANTITY_OPTIONS = [10, 20, 50];
@@ -20,6 +18,27 @@ const STATUS_OPTIONS = [
   { value: 'unlearned', label: 'Chưa thuộc' },
   { value: 'learned', label: 'Đã thuộc' },
 ];
+const LEVEL_OPTIONS = [
+  { value: 'all', label: 'Mọi trình độ' },
+  { value: 'A1', label: 'Level A1' },
+  { value: 'A2', label: 'Level A2' },
+  { value: 'B1', label: 'Level B1' },
+  { value: 'B2', label: 'Level B2' },
+  { value: 'C1', label: 'Level C1' },
+  { value: 'C2', label: 'Level C2' },
+];
+
+const getLevelColor = (level: string) => {
+  switch (level?.toUpperCase()) {
+    case 'A1': return '#4cd137';
+    case 'A2': return '#44bd32';
+    case 'B1': return '#fbc531';
+    case 'B2': return '#e1b12c';
+    case 'C1': return '#e84118';
+    case 'C2': return '#c23616';
+    default: return colors.outline;
+  }
+};
 
 const MODES = [
   {
@@ -60,66 +79,92 @@ export default function VocabWordsScreen() {
   const [displayCount, setDisplayCount] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [levelFilter, setLevelFilter] = useState('all');
+  const [academicOnly, setAcademicOnly] = useState(false);
   const [quantity, setQuantity] = useState(10);
   const [order, setOrder] = useState('random');
   const [learnedIds, setLearnedIds] = useState<Set<string>>(new Set());
-  const [toggling, setToggling] = useState<Set<string>>(new Set());
+  const [words, setWords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const params: Record<string, string> = { vocab_course_id: courseId || '' };
-  if (groupBy && groupValue) params[groupBy] = groupValue;
+  useEffect(() => {
+    loadData();
+  }, [courseId, groupBy, groupValue]);
 
-  const { words: allWords, loading, offline } = useOfflineVocab(params);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      let wordList: any[] = [];
+      if (groupBy === 'group_name' && groupValue) {
+        wordList = await getAllVaultWords(groupValue);
+      } else if (groupBy === 'topic' && groupValue) {
+        wordList = await getWordsByTopic(groupValue, 100);
+      } else if (groupBy === 'level' && groupValue) {
+        wordList = await getWordsByLevel(groupValue, 100);
+      } else {
+        wordList = await getRandomWords(100); // Tăng lên 100 từ để lọc cho sướng
+      }
+      setWords(wordList);
+      
+      const learned = new Set(wordList.filter(w => w.status === 'mastered').map(w => String(w.id)));
+      setLearnedIds(learned as Set<string>);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleLearned = useCallback(async (wordId: number) => {
+    // Optimistic UI Update
+    setLearnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(String(wordId))) next.delete(String(wordId));
+      else next.add(String(wordId));
+      return next;
+    });
+
+    try {
+      await toggleMasteredStatus(wordId);
+    } catch (e) {
+      // Rollback on error
+      setLearnedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(String(wordId))) next.delete(String(wordId));
+        else next.add(String(wordId));
+        return next;
+      });
+      console.error(e);
+    }
+  }, []);
 
   const filteredWords = useMemo(() => {
-    let list = [...allWords];
+    let list = [...words];
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       list = list.filter((w) => w.word.toLowerCase().includes(q) || (w.definition_vi || '').toLowerCase().includes(q));
     }
 
-    if (statusFilter === 'learned') list = list.filter((w) => learnedIds.has(w.id));
-    else if (statusFilter === 'unlearned') list = list.filter((w) => !learnedIds.has(w.id));
+    if (statusFilter === 'learned') list = list.filter((w) => learnedIds.has(String(w.id)));
+    else if (statusFilter === 'unlearned') list = list.filter((w) => !learnedIds.has(String(w.id)));
+
+    if (levelFilter !== 'all') list = list.filter((w) => w.level === levelFilter);
+    if (academicOnly) list = list.filter((w) => w.is_academic === 1);
 
     if (order === 'random') list.sort(() => Math.random() - 0.5);
     else list.sort((a, b) => a.word.localeCompare(b.word));
 
     return list;
-  }, [allWords, searchQuery, statusFilter, order, learnedIds]);
+  }, [words, searchQuery, statusFilter, levelFilter, academicOnly, order, learnedIds]);
 
   const visibleWords = filteredWords.slice(0, displayCount);
-  const totalCount = allWords.length;
+  const totalCount = words.length;
+  const filteredCount = filteredWords.length;
   const learnedCount = learnedIds.size;
 
-  const handleToggleLearned = useCallback(async (wordId: string, value: boolean) => {
-    setToggling((prev) => new Set(prev).add(wordId));
-    const status = value ? 'learned' : 'seen';
-    try {
-      await updateVocabProgress(wordId, { status });
-      setLearnedIds((prev) => {
-        const next = new Set(prev);
-        if (value) next.add(wordId);
-        else next.delete(wordId);
-        return next;
-      });
-    } catch {
-      // Offline — still toggle locally
-      setLearnedIds((prev) => {
-        const next = new Set(prev);
-        if (value) next.add(wordId);
-        else next.delete(wordId);
-        return next;
-      });
-    }
-    setToggling((prev) => {
-      const next = new Set(prev);
-      next.delete(wordId);
-      return next;
-    });
-  }, []);
-
   const handleModePress = (modeId: string) => {
-    router.push(`/vocabulary/minigame?mode=${modeId}&courseId=${courseId}&groupBy=${groupBy || ''}&groupValue=${encodeURIComponent(groupValue || '')}`);
+    router.push(`/vocabulary/minigame?mode=${modeId}&courseId=${courseId || ''}&groupBy=${groupBy || ''}&groupValue=${encodeURIComponent(groupValue || '')}`);
   };
 
   if (loading) {
@@ -136,32 +181,16 @@ export default function VocabWordsScreen() {
     <Screen>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <TouchableOpacity 
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/');
-              }
-            }} 
-            style={styles.backBtn}
-          >
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <FontAwesome name="chevron-left" size={20} color={colors.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
-          <Text style={styles.headerTitle}>Tùy chỉnh</Text>
+          <Text style={styles.headerTitle}>{groupValue || 'Lộ trình'}</Text>
           <View style={{ flex: 1 }} />
           <View style={styles.progressBadge}>
             <Text style={styles.progressText}>{learnedCount}/{totalCount} từ</Text>
           </View>
         </View>
-
-        {offline && (
-          <View style={styles.offlineBanner}>
-            <FontAwesome name="wifi" size={12} color="#fff" />
-            <Text style={styles.offlineBannerText}>Đang xem nội dung đã tải</Text>
-          </View>
-        )}
 
         <View style={styles.filterGrid}>
           <View style={styles.filterCol}>
@@ -176,18 +205,34 @@ export default function VocabWordsScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.filterCol}>
-            <Text style={styles.filterLabel}>Số lượng</Text>
+            <Text style={styles.filterLabel}>Trình độ</Text>
             <TouchableOpacity style={styles.filterSelect} onPress={() => {
-              const idx = QUANTITY_OPTIONS.indexOf(quantity);
-              setQuantity(QUANTITY_OPTIONS[(idx + 1) % QUANTITY_OPTIONS.length]);
-              setDisplayCount(QUANTITY_OPTIONS[(idx + 1) % QUANTITY_OPTIONS.length]);
+              const idx = LEVEL_OPTIONS.findIndex((o) => o.value === levelFilter);
+              setLevelFilter(LEVEL_OPTIONS[(idx + 1) % LEVEL_OPTIONS.length].value);
             }}>
-              <Text style={styles.filterSelectIcon}>🔢</Text>
-              <Text style={styles.filterSelectText}>{quantity} từ</Text>
+              <Text style={styles.filterSelectIcon}>📊</Text>
+              <Text style={styles.filterSelectText}>{LEVEL_OPTIONS.find((o) => o.value === levelFilter)?.label}</Text>
               <FontAwesome name="chevron-down" size={12} color={colors.outline} />
             </TouchableOpacity>
           </View>
-          <View style={{ width: '100%' }}>
+          <View style={styles.filterCol}>
+            <Text style={styles.filterLabel}>Học thuật</Text>
+            <TouchableOpacity 
+              style={[styles.filterSelect, academicOnly && { borderColor: colors.primary, backgroundColor: colors.primary + '10' }]} 
+              onPress={() => setAcademicOnly(!academicOnly)}
+            >
+              <FontAwesome name="graduation-cap" size={14} color={academicOnly ? colors.primary : colors.outline} />
+              <Text style={[styles.filterSelectText, academicOnly && { color: colors.primary, fontWeight: '700' }]}>IELTS</Text>
+              <Switch 
+                value={academicOnly} 
+                onValueChange={setAcademicOnly} 
+                trackColor={{ false: '#eee', true: colors.primary + '50' }}
+                thumbColor={academicOnly ? colors.primary : '#ccc'}
+                style={{ transform: [{ scaleX: 0.6 }, { scaleY: 0.6 }], marginRight: -8 }}
+              />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.filterCol}>
             <Text style={styles.filterLabel}>Thứ tự</Text>
             <TouchableOpacity style={styles.filterSelect} onPress={() => {
               setOrder((prev) => prev === 'random' ? 'ordered' : 'random');
@@ -202,9 +247,6 @@ export default function VocabWordsScreen() {
         <View style={styles.modesSection}>
           <View style={styles.modesHeader}>
             <Text style={styles.sectionTitle}>Chọn chế độ học</Text>
-            <TouchableOpacity>
-              <FontAwesome name="cog" size={18} color={colors.primary} />
-            </TouchableOpacity>
           </View>
           <View style={styles.modesGrid}>
             {MODES.map((mode) => (
@@ -225,7 +267,7 @@ export default function VocabWordsScreen() {
         <View style={styles.listSection}>
           <View style={styles.listHeader}>
             <Text style={styles.sectionTitle}>Danh sách từ vựng</Text>
-            <Text style={styles.listTotal}>{totalCount} từ</Text>
+            <Text style={styles.listTotal}>{filteredCount} / {totalCount} từ</Text>
           </View>
 
           <View style={styles.searchRow}>
@@ -239,19 +281,13 @@ export default function VocabWordsScreen() {
                 onChangeText={setSearchQuery}
               />
             </View>
-            <TouchableOpacity style={styles.filterChip} onPress={() => {
-              const idx = STATUS_OPTIONS.findIndex((o) => o.value === statusFilter);
-              setStatusFilter(STATUS_OPTIONS[(idx + 1) % STATUS_OPTIONS.length].value);
-            }}>
-              <Text style={styles.filterChipText}>{STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label}</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.table}>
             <View style={styles.tableHeader}>
               <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Từ vựng</Text>
               <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>Nghĩa</Text>
-              <Text style={[styles.tableHeaderCell, { flex: 0.8, textAlign: 'right' }]}>Thuộc</Text>
+              <Text style={[styles.tableHeaderCell, { width: 40, textAlign: 'right' }]}>OK</Text>
             </View>
             {visibleWords.map((w) => (
               <TouchableOpacity 
@@ -265,21 +301,35 @@ export default function VocabWordsScreen() {
                       <FontAwesome name="volume-up" size={14} color={colors.primary} />
                     </TouchableOpacity>
                     <View>
-                      <Text style={styles.wordText}>{w.word}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={styles.wordText}>{w.word}</Text>
+                        {w.level && (
+                          <View style={[styles.levelBadgeMini, { backgroundColor: getLevelColor(w.level) }]}>
+                            <Text style={styles.levelBadgeTextMini}>{w.level}</Text>
+                          </View>
+                        )}
+                        {w.is_academic === 1 && (
+                          <FontAwesome name="graduation-cap" size={10} color={colors.outline} />
+                        )}
+                      </View>
                       {w.pronunciation && <Text style={styles.pronunciation}>{w.pronunciation}</Text>}
                     </View>
                   </View>
                 </View>
                 <Text style={[styles.meaningText, { flex: 1.5 }]}>{w.definition_vi || w.definition || ''}</Text>
-                <View style={{ flex: 0.8, alignItems: 'flex-end' }}>
-                  <Switch
-                    value={learnedIds.has(w.id)}
-                    onValueChange={(val) => handleToggleLearned(w.id, val)}
-                    trackColor={{ false: '#ccc', true: colors.primary }}
-                    thumbColor="#fff"
-                    disabled={toggling.has(w.id)}
+                <TouchableOpacity 
+                  style={{ width: 40, alignItems: 'flex-end' }}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleToggleLearned(w.id);
+                  }}
+                >
+                  <FontAwesome 
+                    name={learnedIds.has(String(w.id)) ? "check-circle" : "circle-o"} 
+                    size={20} 
+                    color={learnedIds.has(String(w.id)) ? "#27ae60" : colors.border} 
                   />
-                </View>
+                </TouchableOpacity>
               </TouchableOpacity>
             ))}
           </View>
@@ -346,12 +396,6 @@ const styles = StyleSheet.create({
     paddingLeft: 32, paddingRight: spacing.sm, paddingVertical: spacing.sm,
     fontSize: 13, color: colors.text, borderRadius: radius.pill,
   },
-  filterChip: {
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    backgroundColor: colors.surfaceContainerLow, borderRadius: radius.pill,
-    justifyContent: 'center',
-  },
-  filterChipText: { fontSize: 13, color: colors.text, fontWeight: '500' },
 
   table: {
     backgroundColor: '#fff', borderRadius: radius.sm, overflow: 'hidden',
@@ -372,6 +416,8 @@ const styles = StyleSheet.create({
   },
   wordCell: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   wordText: { fontSize: 14, fontWeight: '700', color: colors.text },
+  levelBadgeMini: { paddingHorizontal: 4, height: 14, borderRadius: 3, justifyContent: 'center' },
+  levelBadgeTextMini: { color: '#fff', fontSize: 8, fontWeight: '800' },
   pronunciation: { fontSize: 10, color: colors.outline },
   meaningText: { fontSize: 13, color: colors.textSecondary },
 
@@ -380,11 +426,4 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.primary, borderRadius: radius.pill,
   },
   showMoreText: { fontSize: 12, fontWeight: '700', color: colors.primary },
-  offlineBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-    backgroundColor: colors.secondary, borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.unit,
-    marginBottom: spacing.sm, alignSelf: 'flex-start',
-  },
-  offlineBannerText: { fontSize: 12, fontWeight: '600', color: '#fff' },
 });
