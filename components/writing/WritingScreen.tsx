@@ -299,7 +299,6 @@ export function WritingScreen({ lesson, timeLimitMinutes = 60 }: WritingScreenPr
         results={[]}
         writingFeedback={writingFeedback}
         onDone={() => { setShowResultModal(false); clearDraft(taskId); router.back(); }}
-        onRetake={handleRetake}
       />
     </View>
   );

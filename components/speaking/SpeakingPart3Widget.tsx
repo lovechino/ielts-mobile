@@ -100,6 +100,7 @@ export function SpeakingPart3Widget({ onEndSession, onManualEnd, onExit }: Speak
       setLocalTranscript(res.transcript || '');
       setFeedback(res);
       addTurn(res);
+      setAppState('speaking');
 
       // Handle Transition command from AI (though Part 3 is usually the last)
       if (res.transition_to_part) {

@@ -168,8 +168,8 @@ export default function ProfileScreen() {
               <FontAwesome name="graduation-cap" size={22} color={colors.secondary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.enrolledTitle}>Enrolled courses</Text>
-              <Text style={styles.enrolledSub}>Active learning programs</Text>
+              <Text style={styles.enrolledTitle}>Unlocked test sets</Text>
+              <Text style={styles.enrolledSub}>Exam preparation sets</Text>
             </View>
             <Text style={styles.enrolledCount}>{user?.enrolled_courses?.length || 0}</Text>
           </View>

@@ -12,7 +12,7 @@ export function fetchVocabulary(params?: {
 }
 
 export function fetchVocabularyCourses(): Promise<VocabularyCourseDTO[]> {
-  return apiFetch<VocabularyCourseDTO[]>('/vocabulary/courses');
+  return apiFetch<VocabularyCourseDTO[]>('/vocabulary/paths');
 }
 
 export function fetchVocabByWord(word: string): Promise<VocabularyDTO> {

@@ -11,6 +11,7 @@ import { submitTurn } from '@/lib/api/speaking';
 import { SpeakingTimer } from './SpeakingTimer';
 import { PreparationTimer } from './PreparationTimer';
 import { CueCard } from './CueCard';
+import { playSound } from '@/lib/sound';
 
 const SPEAK_DURATION = 120;
 
@@ -58,38 +59,53 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
   const [localTranscript, setLocalTranscript] = useState('');
   const [sessionEnded, setSessionEnded] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [showStartOverlay, setShowStartOverlay] = useState(false);
 
   const entranceAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(entranceAnim, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, []);
 
-  useEffect(() => {
-    if (appState === 'processing' && lastFeedback) {
-      setAppState('speaking');
-    }
-  }, [appState, lastFeedback]);
-
   useEffect(() => () => stopTTS(), []);
 
-  // On mount: skip TTS intro, go directly to preparing
+  // Fix transition state on mount
   useEffect(() => {
-    if (appState === 'speaking' && !lastFeedback) {
+    if (!lastFeedback) {
       setAppState('preparing');
+    } else if (appState === 'processing') {
+      // If we came from Part 1, we might be stuck in 'processing'
+      setAppState('speaking');
     }
   }, []);
 
-  // After each feedback, speak the response then go to listening
+  // TTS logic with transition to preparing
   useEffect(() => {
-    if (appState === 'speaking' && turns.length > 0 && lastFeedback?.response) {
+    if (appState === 'speaking' && lastFeedback?.response) {
       speak(lastFeedback.response, currentPersonaId, undefined, () => {
-        setAppState('listening');
-        if (lastFeedback.next_question) {
-          speak(lastFeedback.next_question, currentPersonaId);
+        // If it's a transition turn or the first turn of Part 2, go to preparing
+        const isIntro = lastFeedback.transition_to_part === 2 || turns.length <= 1;
+        if (isIntro) {
+          setAppState('preparing');
+        } else {
+          setAppState('listening');
+          if (lastFeedback.next_question) {
+            speak(lastFeedback.next_question, currentPersonaId);
+          }
         }
       });
     }
-  }, [lastFeedback, appState, currentPersonaId, speak, turns.length]);
+  }, [lastFeedback, appState, currentPersonaId, speak]);
+
+  const handleTimeUp = useCallback(async () => {
+    playSound('beep');
+    setPrepTimeLeft(60);
+    setShowStartOverlay(true);
+    setTimeout(() => {
+      setShowStartOverlay(false);
+      setAppState('recording');
+      startRecording();
+    }, 2500);
+  }, [startRecording, setAppState, setPrepTimeLeft]);
 
   const handleVoiceSubmission = async (uri: string) => {
     setSubmitting(true);
@@ -103,8 +119,8 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
       setLocalTranscript(res.transcript || '');
       setFeedback(res);
       addTurn(res);
+      setAppState('speaking');
 
-      // Handle Transition command from AI
       if (res.transition_to_part) {
         const nextIdx = lessonParts.indexOf(res.transition_to_part);
         if (nextIdx !== -1) {
@@ -122,7 +138,6 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
   };
 
   const confirmEndSession = useCallback(async () => {
-    // On web, Alert.alert callbacks don't work — use window.confirm instead
     const confirmed = Platform.OS === 'web'
       ? window.confirm('End this speaking session and see your report?')
       : await new Promise<boolean>((resolve) => {
@@ -148,11 +163,9 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
     setEnding(false);
   }, [onManualEnd, isRecording, stopRecording, stopTTS]);
 
-  // Recording phase — no VAD, user presses mic to stop
   const handleMicPress = async () => {
     stopTTS();
     if (isRecording) {
-      // Luôn cho phép stop recording
       const uri = await stopRecording();
       if (uri && !submitting) handleVoiceSubmission(uri);
     } else {
@@ -162,18 +175,6 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
     }
   };
 
-  // Post-recording listening/feedback — use VAD for follow-up turns
-  // For follow-up turns after the main long turn, use standard voice detection
-
-  const statusText = appState === 'loading' ? 'Examiner preparing...'
-    : appState === 'speaking' ? 'Examiner speaking...'
-    : appState === 'preparing' ? 'Prepare your answer...'
-    : appState === 'recording' ? 'Recording your answer...'
-    : appState === 'processing' ? 'Analyzing speech...'
-    : appState === 'listening' ? 'Listening to you...'
-    : 'Connected';
-
-  // VAD for follow-up turns only (after first submission)
   const hasSubmitted = turns.length > 0;
   useVAD({
     meteringValue,
@@ -189,6 +190,14 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
     silenceDurationMs: 2500,
   });
 
+  const statusText = appState === 'loading' ? 'Examiner preparing...'
+    : appState === 'speaking' ? 'Examiner speaking...'
+    : appState === 'preparing' ? 'Prepare your answer...'
+    : appState === 'recording' ? 'Recording your answer...'
+    : appState === 'processing' ? 'Analyzing speech...'
+    : appState === 'listening' ? 'Listening to you...'
+    : 'Connected';
+
   if (ending) {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
@@ -202,11 +211,9 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
 
   return (
     <View style={styles.root}>
-      {/* Background mesh */}
       <View style={styles.bgMesh1} pointerEvents="none" />
       <View style={styles.bgMesh2} pointerEvents="none" />
 
-      {/* Header */}
       <Animated.View style={[styles.header, { opacity: entranceAnim }]}>
         <TouchableOpacity onPress={onExit} style={styles.headerBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
@@ -214,15 +221,10 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
         <Text style={styles.headerTitle}>Talko</Text>
         <View style={styles.headerRight}>
           {appState === 'preparing' ? (
-            <PreparationTimer
-              timeLeft={prepTimeLeft}
-              onTimeUp={() => {
-                setPrepTimeLeft(60);
-                setAppState('recording');
-                startRecording();
-              }}
-              onTick={setPrepTimeLeft}
-            />
+            <View style={styles.smallPrepTimer}>
+              <FontAwesome name="clock-o" size={12} color={colors.primary} />
+              <Text style={styles.smallPrepText}>{prepTimeLeft}s</Text>
+            </View>
           ) : (
             <SpeakingTimer totalSeconds={SPEAK_DURATION} onTimeUp={onEndSession} stopped={sessionEnded} />
           )}
@@ -232,23 +234,18 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
         </View>
       </Animated.View>
 
-      {/* Scrollable content */}
       <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
-        {/* Cue Card — always visible */}
         <Animated.View style={{ opacity: entranceAnim, marginTop: spacing.sm }}>
           <CueCard topic={dynamicTopic} />
         </Animated.View>
 
-        {/* State-specific center area */}
         <Animated.View style={[styles.centerArea, { opacity: entranceAnim }]}>
           {appState === 'preparing' && (
-            <View style={styles.prepContainer}>
-              <FontAwesome name="clock-o" size={48} color={colors.primary} />
-              <Text style={styles.prepTitle}>Prepare Your Answer</Text>
-              <Text style={styles.prepHint}>
-                You have {prepTimeLeft} seconds to plan. Make notes on the cue card points.
-              </Text>
-            </View>
+            <PreparationTimer
+              timeLeft={prepTimeLeft}
+              onTimeUp={handleTimeUp}
+              onTick={setPrepTimeLeft}
+            />
           )}
 
           {(appState === 'recording' || appState === 'processing') && (
@@ -271,12 +268,21 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
               <Text style={styles.listeningText}>Examiner is speaking...</Text>
             </View>
           )}
+          
+          {appState === 'speaking' && lastFeedback && (
+            <View style={styles.speakingContainer}>
+               <Text style={styles.speakingText}>{lastFeedback.response}</Text>
+            </View>
+          )}
         </Animated.View>
-
-        <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* Bottom mic — not absolute */}
+      {showStartOverlay && (
+        <View style={styles.startOverlay}>
+          <Text style={styles.startOverlayText}>START SPEAKING NOW!</Text>
+        </View>
+      )}
+
       {(appState === 'preparing' || appState === 'recording' || appState === 'listening') && (
         <Animated.View style={[styles.footerContainer, { opacity: entranceAnim }]}>
           <TouchableOpacity
@@ -322,18 +328,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: spacing.unit,
   },
   endBtnText: { fontSize: 12, fontWeight: '700', color: colors.onErrorContainer },
+  
+  smallPrepTimer: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.primaryFixed, paddingHorizontal: spacing.sm,
+    paddingVertical: 4, borderRadius: radius.pill,
+  },
+  smallPrepText: { fontSize: 12, fontWeight: '800', color: colors.primary },
 
   centerArea: { alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xl },
-  prepContainer: { alignItems: 'center', paddingHorizontal: spacing.xl, gap: spacing.md },
-  prepTitle: { fontSize: 22, fontWeight: '700', color: colors.text },
-  prepHint: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-
   recordingContainer: { alignItems: 'center', gap: spacing.md },
   recordingDotRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  recordingDot: {
-    width: 14, height: 14, borderRadius: 7,
-    backgroundColor: '#e53e3e',
-  },
+  recordingDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#e53e3e' },
   recordingDotProcessing: { backgroundColor: colors.textSecondary },
   recordingDotLabel: { fontSize: 11, fontWeight: '800', color: '#e53e3e', letterSpacing: 1 },
   recordingText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.lg },
@@ -341,42 +347,31 @@ const styles = StyleSheet.create({
   listeningContainer: { alignItems: 'center', gap: spacing.md },
   listeningText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
 
-  feedbackArea: { paddingHorizontal: spacing.md, gap: spacing.sm, marginTop: spacing.md },
-  transcriptBox: {
-    backgroundColor: '#ffffff', borderRadius: radius.md, borderLeftWidth: 4, borderLeftColor: colors.primary,
-    padding: spacing.md, ...shadow.card,
-  },
-  transcriptLabel: { fontSize: 10, fontWeight: '700', color: colors.primary, letterSpacing: 0.5, marginBottom: 4 },
-  transcriptText: { fontSize: 15, color: colors.text, fontStyle: 'italic', lineHeight: 22 },
-  feedbackMain: {
-    backgroundColor: '#f0fdf4', borderRadius: radius.md, borderLeftWidth: 4, borderLeftColor: colors.tertiary,
-    padding: spacing.md, ...shadow.card,
-  },
-  feedbackHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
-  feedbackMainLabel: { fontSize: 10, fontWeight: '700', color: colors.tertiary, letterSpacing: 0.5 },
-  bandBadge: { fontSize: 12, fontWeight: '700', color: colors.tertiary, backgroundColor: '#e6f7ed', paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm },
-  feedbackMainText: { fontSize: 14, color: colors.text, lineHeight: 20 },
-  correctionBox: { borderTopWidth: 1, borderColor: '#d1fae5', marginTop: spacing.sm, paddingTop: spacing.sm },
-  correctionLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
-  correctionText: { fontSize: 14, color: colors.primary, fontWeight: '600', marginTop: 2 },
+  speakingContainer: { paddingHorizontal: spacing.xl, alignItems: 'center' },
+  speakingText: { fontSize: 16, color: colors.text, textAlign: 'center', fontStyle: 'italic', lineHeight: 24 },
 
-  footerContainer: {
-    alignItems: 'center', paddingVertical: spacing.lg,
-    backgroundColor: 'transparent',
+  startOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 999,
   },
+  startOverlayText: {
+    fontSize: 32, fontWeight: '900', color: '#fff',
+    textAlign: 'center', paddingHorizontal: spacing.xl,
+  },
+
+  footerContainer: { alignItems: 'center', paddingVertical: spacing.lg, backgroundColor: 'transparent' },
   micHint: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.xs },
   micBtn: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#eceef0',
-    alignItems: 'center', justifyContent: 'center',
-    ...shadow.card,
+    alignItems: 'center', justifyContent: 'center', ...shadow.card,
   },
   micBtnActive: {
     backgroundColor: colors.primary, borderColor: colors.primary,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 8,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 20, elevation: 8,
   },
 });

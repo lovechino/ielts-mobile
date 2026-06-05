@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { colors, radius, spacing, shadow } from '@/theme/tokens';
 import { useTestStore } from '@/stores/useTestStore';
 import type { GroupedQuestion } from '@/stores/useTestStore';
-import type { LessonDTO } from '@/lib/api/types';
+import type { LessonDTO, PassageDTO, QuestionGroupDTO } from '@/lib/api/types';
 import { PassageViewer } from './PassageViewer';
 import { ReadingGroupRenderer } from './ReadingGroupRenderer';
 import { ExamTimer } from '@/components/shared/ExamTimer';
@@ -13,6 +13,7 @@ import { SubmitModal } from '@/components/shared/SubmitModal';
 import { ExamResultModal } from '@/components/shared/ExamResultModal';
 import { ScoringQueuedScreen } from '@/components/shared/ScoringQueuedScreen';
 import { DictionaryOverlay, useDictionaryOverlay } from '@/components/shared/DictionaryOverlay';
+import { PartSectionHeader } from '@/components/shared/PartSectionHeader';
 import { FontAwesome } from '@expo/vector-icons';
 import { submitAnswers, saveDraft } from '@/lib/api/progress';
 
@@ -117,6 +118,63 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
     autoSubmittedRef.current = false;
   }, [lessonId, timeLimitMinutes, resetForRetake]);
 
+  // --- Mixed-part grouped rendering ---
+  // Derives which parts to render from lesson.lesson_parts (e.g. [1,3]).
+  // Falls back to rendering all content without part headers if lesson_parts is absent.
+  const renderPartSections = useCallback(() => {
+    const allPassages = lesson.passages ?? [];
+    const allGroups = groups;
+    const partsToRender = lesson.lesson_parts;
+
+    // No explicit part config → render flat (backwards-compatible)
+    if (!partsToRender || partsToRender.length === 0) {
+      return (
+        <>
+          {allPassages.map((p) => (
+            <PassageViewer key={p.id} title={p.title} contentHtml={p.content_html} />
+          ))}
+          {allGroups.map((g) => (
+            <View key={g.group.id}>
+              <ReadingGroupRenderer
+                group={g.group}
+                questions={g.questions}
+                answers={answers}
+                onAnswer={handleAnswer}
+              />
+            </View>
+          ))}
+        </>
+      );
+    }
+
+    // Render each active part in order
+    return partsToRender.map((partNum) => {
+      const partPassages = allPassages.filter((p) => (p.part ?? 1) === partNum);
+      const partGroups = allGroups.filter((g) => (g.group.part ?? 1) === partNum);
+      // Use first passage title as part title if available
+      const partTitle = partPassages[0]?.title ?? null;
+
+      return (
+        <View key={partNum}>
+          <PartSectionHeader partNumber={partNum} title={partTitle} />
+          {partPassages.map((p) => (
+            <PassageViewer key={p.id} title={undefined} contentHtml={p.content_html} />
+          ))}
+          {partGroups.map((g) => (
+            <View key={g.group.id}>
+              <ReadingGroupRenderer
+                group={g.group}
+                questions={g.questions}
+                answers={answers}
+                onAnswer={handleAnswer}
+              />
+            </View>
+          ))}
+        </View>
+      );
+    });
+  }, [lesson.passages, lesson.lesson_parts, groups, answers, handleAnswer]);
+
   if (!lesson || !lesson.id) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -161,20 +219,7 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {lesson.passages?.map((p) => (
-          <PassageViewer key={p.id} title={p.title} contentHtml={p.content_html} />
-        ))}
-
-        {groups.map((g) => (
-          <View key={g.group.id}>
-            <ReadingGroupRenderer
-              group={g.group}
-              questions={g.questions}
-              answers={answers}
-              onAnswer={handleAnswer}
-            />
-          </View>
-        ))}
+        {renderPartSections()}
       </ScrollView>
 
       <View style={styles.bottomBar}>
@@ -221,7 +266,6 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
         totalQuestions={totalQuestions}
         results={results ?? []}
         onDone={() => { setShowResultModal(false); router.back(); }}
-        onRetake={handleRetake}
       />
 
       {/* Dictionary overlay — tra từ nhanh trong bài đọc */}

@@ -16,7 +16,7 @@ import type { GroupedQuestion } from '@/stores/useTestStore';
 export default function LessonScreen() {
   const { id, type, part, testType } = useLocalSearchParams<{ id: string; type?: string; part?: string; testType?: string }>();
   const router = useRouter();
-  const { setSessionId, setCurrentPersonaId, setPrefill, setAppState } = useSpeakingStore();
+  const { setSessionId, setCurrentPersonaId, setPrefill, setAppState, setFeedback } = useSpeakingStore();
   const startedRef = useRef(false);
   const lessonType = (type || '').toLowerCase();
   const speakingPart = parseInt(part || '1', 10);
@@ -80,11 +80,19 @@ export default function LessonScreen() {
     if (lessonData.content) {
       try {
         parsedContent = JSON.parse(lessonData.content);
+        if (typeof parsedContent === 'string') {
+          throw new Error('Parsed content is a string');
+        }
       } catch {
-        // Plain text — treat the whole content as the cue card for the first part
+        // Plain text from CMS
         const partKey = `part${firstPart}`;
+        const lines = lessonData.content.split('\n').map((l: string) => l.trim()).filter(Boolean);
         parsedContent = {
-          [partKey]: { cue_card: lessonData.content },
+          [partKey]: firstPart === 1
+            ? { topics: [{ name: lessonData.title || 'Topic', questions: lines }] }
+            : firstPart === 2
+            ? { cue_card: lessonData.content }
+            : { questions: lines }
         };
       }
     }
@@ -105,6 +113,36 @@ export default function LessonScreen() {
     })
       .then((session) => {
         setSessionId(session.sessionId);
+        
+        // If the backend extracted the cue card from passages, update the store so the widget displays it.
+        if (session.cue_card_text) {
+          setPrefill(
+            topic,
+            session.parts?.[0] ?? firstPart,
+            session.parts ?? parts ?? undefined,
+            {
+              ...(parsedContent || {}),
+              part2: { cue_card: session.cue_card_text }
+            }
+          );
+        }
+
+        // Seed the opening question into the store so the chat bubble
+        // shows the examiner's first message immediately on mount.
+        if (session.opening_question) {
+          setFeedback({
+            transcript: '',
+            response: session.opening_question,
+            feedback: '',
+            band_estimate: 0,
+            fluency: 0,
+            lexicalResource: 0,
+            grammaticalRange: 0,
+            pronunciation: 0,
+            correction: null,
+            next_question: null,
+          });
+        }
         setAppState('speaking');
         router.replace('/speaking/session');
       })

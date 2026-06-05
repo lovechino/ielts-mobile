@@ -14,6 +14,7 @@ import { SubmitModal } from '@/components/shared/SubmitModal';
 import { ExamResultModal } from '@/components/shared/ExamResultModal';
 import { ScoringQueuedScreen } from '@/components/shared/ScoringQueuedScreen';
 import { DictionaryOverlay, useDictionaryOverlay } from '@/components/shared/DictionaryOverlay';
+import { PartSectionHeader } from '@/components/shared/PartSectionHeader';
 import { FontAwesome } from '@expo/vector-icons';
 import { submitAnswers, saveDraft } from '@/lib/api/progress';
 
@@ -74,7 +75,6 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
   }, [allQs]);
 
   const { activeQuestionNumber } = useAudioSync(audioTimeMs, timestampedQuestions);
-  const passageWithAudio = lesson.passages?.find((p) => p.audio_url);
 
   const handleTimeUpdate = useCallback((timeMs: number) => {
     setAudioTimeMs(timeMs);
@@ -133,6 +133,90 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
     autoSubmittedRef.current = false;
   }, [lessonId, timeLimitMinutes, resetForRetake]);
 
+  // --- Mixed-part grouped rendering ---
+  // Each IELTS Listening part has its own audio source (passage with audio_url).
+  // We render an AudioController per part that has audio, then its question groups.
+  const renderPartSections = useCallback(() => {
+    const allPassages = lesson.passages ?? [];
+    const allGroups = groups;
+    const partsToRender = lesson.lesson_parts;
+
+    // No explicit part config → legacy flat render
+    if (!partsToRender || partsToRender.length === 0) {
+      const legacyPassageWithAudio = allPassages.find((p) => p.audio_url);
+      let offset = 0;
+      return (
+        <>
+          {legacyPassageWithAudio && (
+            <AudioController
+              audioUrl={legacyPassageWithAudio.audio_url!}
+              onTimeUpdate={handleTimeUpdate}
+            />
+          )}
+          {allGroups.reduce<{ offset: number; elements: React.ReactNode[] }>(
+            (acc, g) => {
+              const startIndex = acc.offset;
+              acc.elements.push(
+                <View key={g.group.id}>
+                  <ListeningGroupRenderer
+                    group={g.group}
+                    questions={g.questions}
+                    answers={answers}
+                    onAnswer={handleAnswer}
+                    activeQuestionNumber={activeQuestionNumber}
+                    startIndex={startIndex}
+                  />
+                </View>
+              );
+              acc.offset += g.questions.length;
+              return acc;
+            },
+            { offset: 0, elements: [] }
+          ).elements}
+        </>
+      );
+    }
+
+    // Grouped render — track global question offset for correct numbering
+    let globalOffset = 0;
+    return partsToRender.map((partNum) => {
+      const partPassages = allPassages.filter((p) => (p.part ?? 1) === partNum);
+      const partGroups = allGroups.filter((g) => (g.group.part ?? 1) === partNum);
+      const partAudio = partPassages.find((p) => p.audio_url);
+      const partTitle = partPassages[0]?.title ?? null;
+
+      const elements = partGroups.map((g) => {
+        const startIndex = globalOffset;
+        globalOffset += g.questions.length;
+        return (
+          <View key={g.group.id}>
+            <ListeningGroupRenderer
+              group={g.group}
+              questions={g.questions}
+              answers={answers}
+              onAnswer={handleAnswer}
+              activeQuestionNumber={activeQuestionNumber}
+              startIndex={startIndex}
+            />
+          </View>
+        );
+      });
+
+      return (
+        <View key={partNum}>
+          <PartSectionHeader partNumber={partNum} title={partTitle} />
+          {partAudio && (
+            <AudioController
+              audioUrl={partAudio.audio_url!}
+              onTimeUpdate={handleTimeUpdate}
+            />
+          )}
+          {elements}
+        </View>
+      );
+    });
+  }, [lesson.passages, lesson.lesson_parts, groups, answers, handleAnswer, activeQuestionNumber, handleTimeUpdate]);
+
   if (!lesson?.id) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -177,33 +261,7 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {passageWithAudio && (
-          <AudioController
-            audioUrl={passageWithAudio.audio_url!}
-            onTimeUpdate={handleTimeUpdate}
-          />
-        )}
-
-        {groups.reduce<{ offset: number; elements: React.ReactNode[] }>(
-          (acc, g) => {
-            const startIndex = acc.offset;
-            acc.elements.push(
-              <View key={g.group.id}>
-                <ListeningGroupRenderer
-                  group={g.group}
-                  questions={g.questions}
-                  answers={answers}
-                  onAnswer={handleAnswer}
-                  activeQuestionNumber={activeQuestionNumber}
-                  startIndex={startIndex}
-                />
-              </View>
-            );
-            acc.offset += g.questions.length;
-            return acc;
-          },
-          { offset: 0, elements: [] }
-        ).elements}
+        {renderPartSections()}
       </ScrollView>
 
       <View style={styles.bottomBar}>
@@ -245,7 +303,6 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
         totalQuestions={totalQuestions}
         results={results ?? []}
         onDone={() => { setShowResultModal(false); router.back(); }}
-        onRetake={handleRetake}
       />
 
       {/* Dictionary overlay — tra từ nhanh trong bài nghe */}

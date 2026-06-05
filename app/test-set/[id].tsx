@@ -15,7 +15,7 @@ const ICON_MAP: Record<string, { icon: 'microphone' | 'book' | 'headphones' | 'p
   writing: { icon: 'pencil', color: colors.primary },
 };
 
-export default function CourseDetailScreen() {
+export default function TestSetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { course, lessons, loading, offline, cached, error } = useOfflineCourse(id);
@@ -40,7 +40,7 @@ export default function CourseDetailScreen() {
     return (
       <Screen>
         <View style={styles.center}>
-          <Text style={styles.errorText}>{error || 'Course not found'}</Text>
+          <Text style={styles.errorText}>{error || 'Test set not found'}</Text>
           <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
             <Text style={styles.backLinkText}>Go back</Text>
           </TouchableOpacity>
@@ -86,10 +86,10 @@ export default function CourseDetailScreen() {
         </View>
       )}
 
-      <Text style={styles.sectionTitle}>Lessons</Text>
+      <Text style={styles.sectionTitle}>Tests</Text>
 
       {lessons.length === 0 ? (
-        <Text style={styles.emptyText}>No lessons available yet.</Text>
+        <Text style={styles.emptyText}>No tests available yet.</Text>
       ) : (
         lessons
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))

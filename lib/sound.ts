@@ -1,9 +1,10 @@
 import { Audio } from 'expo-av';
 
 export const SOUNDS = {
-  success: 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3', // Một âm thanh thành công vui nhộn
+  success: 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3',
   click: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
   error: 'https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3',
+  beep: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
 };
 
 export async function playSound(type: keyof typeof SOUNDS) {

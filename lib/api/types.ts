@@ -36,6 +36,8 @@ export interface PassageDTO {
   title?: string | null;
   content_html?: string | null;
   order?: number | null;
+  /** IELTS part number (1, 2, or 3). Used for grouped rendering in mixed-part tests. */
+  part?: number | null;
   audio_url?: string | null;
   transcript?: string | null;
 }
@@ -48,6 +50,8 @@ export interface QuestionGroupDTO {
   instruction?: string | null;
   group_type?: string | null;
   order?: number | null;
+  /** IELTS part number (1, 2, or 3). Used for grouped rendering in mixed-part tests. */
+  part?: number | null;
   options_pool?: any[] | null;
   config?: Record<string, any> | null;
   content_template?: string | null;

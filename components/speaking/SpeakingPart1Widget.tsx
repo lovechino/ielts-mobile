@@ -178,24 +178,6 @@ function SpeechBubble({ label, text, italic, success }: { label: string; text: s
   );
 }
 
-function FeedbackPanel({ band, feedback, correction }: { band: number; feedback: string; correction: string | null }) {
-  return (
-    <View style={styles.feedbackCard}>
-      <View style={styles.feedbackHeader}>
-        <Text style={styles.feedbackLabel}>TURN EVALUATION</Text>
-        <Text style={styles.bandBadge}>Band {band}</Text>
-      </View>
-      <Text style={styles.feedbackText}>{feedback}</Text>
-      {correction && (
-        <View style={styles.correctionBox}>
-          <Text style={styles.correctionLabel}>Suggested Native Correction:</Text>
-          <Text style={styles.correctionText}>{correction}</Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
 interface SpeakingPart1WidgetProps {
   onEndSession?: () => void;
   onManualEnd?: () => void;
@@ -231,21 +213,58 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
   const [submitting, setSubmitting] = useState(false);
   const [localTranscript, setLocalTranscript] = useState('');
   const [sessionEnded, setSessionEnded] = useState(false);
-  const [ending, setEnding] = useState(false); // true while waiting for end API
+  const [ending, setEnding] = useState(false);
 
   const currentPart = lessonParts[currentPartIndex] || 1;
   const timerDuration = PART_DURATIONS[currentPart] || 300;
 
-  // Extract dynamic topic from pre-loaded fullContent JSON
   const currentPartData = fullContent?.[`part${currentPart}`];
-  const dynamicTopic = currentPart === 1 
-    ? (currentPartData?.topics?.[0]?.name || prefilledTopic)
-    : (currentPart === 2 ? (currentPartData?.cue_card || prefilledTopic) : (currentPartData?.discussion_topics?.[0] || prefilledTopic));
+  let dynamicTopic = prefilledTopic;
+  if (currentPartData) {
+    if (currentPart === 1) {
+      const topicObj = currentPartData.topics?.[0];
+      if (topicObj) {
+        dynamicTopic = topicObj.name || prefilledTopic;
+        if (Array.isArray(topicObj.questions) && topicObj.questions.length > 0) {
+          dynamicTopic += '\n\n' + topicObj.questions.map((q: string) => `• ${q}`).join('\n');
+        }
+      }
+    } else if (currentPart === 2) {
+      dynamicTopic = currentPartData.cue_card || prefilledTopic;
+    } else if (currentPart === 3) {
+      dynamicTopic = currentPartData.discussion_topics?.[0] || prefilledTopic;
+    }
+  }
 
   const entranceAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(entranceAnim, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, []);
+
+  // VAD logic
+  useVAD({
+    meteringValue,
+    isRecording,
+    onSilenceDetected: async () => {
+      const uri = await stopRecording();
+      if (uri) handleVoiceSubmission(uri);
+    },
+    onVoiceResumed: () => setAppState('listening'),
+  });
+
+  // TTS logic
+  useEffect(() => {
+    if (appState === 'speaking' && lastFeedback?.response) {
+      speak(lastFeedback.response, currentPersonaId, undefined, () => {
+        setAppState('listening');
+        if (lastFeedback.next_question) {
+          speak(lastFeedback.next_question, currentPersonaId);
+        }
+      });
+    }
+  }, [lastFeedback, appState, currentPersonaId, speak]);
+
+  useEffect(() => () => stopTTS(), []);
 
   const handleVoiceSubmission = async (uri: string) => {
     setSubmitting(true);
@@ -256,18 +275,16 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
       if (!sessionId) return;
       const res = await submitTurn({ sessionId, audio: base64, format: Platform.OS === 'web' ? 'webm' : 'm4a' });
       
-      // Update store with feedback
       setLocalTranscript(res.transcript || '');
       setFeedback(res);
       addTurn(res);
+      setAppState('speaking');
 
-      // Handle Transition command from AI
       if (res.transition_to_part) {
         const nextIdx = lessonParts.indexOf(res.transition_to_part);
         if (nextIdx !== -1) {
           setTimeout(() => {
             setPartIndex(nextIdx);
-            // Optionally play a sound or alert here
           }, 1500);
         }
       }
@@ -308,11 +325,10 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
   const handleMicPress = async () => {
     stopTTS();
     if (isRecording) {
-      // Luôn cho phép stop recording, kể cả khi đang submitting
       const uri = await stopRecording();
       if (uri && !submitting) handleVoiceSubmission(uri);
     } else {
-      if (submitting) return; // Không bắt đầu recording mới khi đang xử lý
+      if (submitting) return;
       setAppState('listening');
       await startRecording();
     }
@@ -327,7 +343,6 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
   const partLabel = `Speaking Part ${currentPart}`;
   const { name } = PERSONA_DETAILS[currentPersonaId] || PERSONA_DETAILS.james;
 
-  // While ending — show a simple overlay so user gets immediate feedback
   if (ending) {
     return (
       <View style={[styles.widgetContainer, { alignItems: 'center', justifyContent: 'center' }]}>

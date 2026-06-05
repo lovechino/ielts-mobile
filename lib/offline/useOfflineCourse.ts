@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchCourse, fetchCourseLessons } from '@/lib/api/courses';
+import { fetchCourse, fetchCourseLessons } from '@/lib/api/test-sets';
 import { readJSON, hasJSON } from '@/lib/offline/storage';
 import type { CourseDTO, LessonDTO } from '@/lib/api/types';
 

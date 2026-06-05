@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import * as courses from './courses';
+import * as testSets from './test-sets';
 import * as lessons from './lessons';
 import * as vocabulary from './vocabulary';
 import * as stats from './stats';
@@ -15,7 +15,7 @@ export const api = {
   patch: async <T = any>(url: string, body?: any, options?: any) => apiFetch<T>(url, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
   delete: async <T = any>(url: string, options?: any) => apiFetch<T>(url, { ...options, method: 'DELETE' }),
 
-  courses,
+  testSets,
   lessons,
   vocabulary,
   stats,

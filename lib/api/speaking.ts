@@ -45,7 +45,7 @@ export interface SessionReport {
 }
 
 export const startSession = (body: { personaId: string; topic: string; part: number; lesson_id?: string }) =>
-  apiFetch<{ sessionId: string; opening_question: string; current_part?: number }>('/speaking/session/start', {
+  apiFetch<{ sessionId: string; opening_question: string; current_part?: number; cue_card_text?: string | null; parts?: number[] }>('/speaking/session/start', {
     method: 'POST',
     body: JSON.stringify(body),
   });

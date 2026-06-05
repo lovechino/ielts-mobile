@@ -69,7 +69,7 @@ export default function HomeScreen() {
 
       // 1. Chuyển đổi systemStats (IELTS, TOEIC...)
       const systemPaths: VocabPath[] = systemStats.map(s => ({
-        id: s.topic,
+        id: 'system_' + s.topic,
         title: s.topic,
         subtitle: 'Lộ trình hệ thống',
         icon: s.topic.toLowerCase().includes('ielts') ? 'graduation-cap' : 'book',
@@ -80,7 +80,7 @@ export default function HomeScreen() {
 
       // 2. Chuyển đổi userGroups (Lộ trình cá nhân)
       const customPaths: VocabPath[] = userGroups.map(g => ({
-        id: g.group_name,
+        id: 'custom_' + g.group_name,
         title: g.group_name,
         subtitle: 'Lộ trình của bạn',
         icon: 'user',
@@ -194,9 +194,9 @@ export default function HomeScreen() {
                 style={[styles.pathCard, { backgroundColor: path.color + '10', borderColor: path.color + '30' }]}
                 onPress={() => {
                   if (path.isCustom) {
-                    router.push(`/vocabulary/words?groupBy=group_name&groupValue=${encodeURIComponent(path.id)}`);
+                    router.push(`/vocabulary/words?groupBy=group_name&groupValue=${encodeURIComponent(path.title)}`);
                   } else {
-                    router.push(`/vocabulary/words?groupBy=topic&groupValue=${encodeURIComponent(path.id)}`);
+                    router.push(`/vocabulary/words?groupBy=topic&groupValue=${encodeURIComponent(path.title)}`);
                   }
                 }}
               >
