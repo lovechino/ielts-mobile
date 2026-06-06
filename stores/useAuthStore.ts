@@ -18,6 +18,7 @@ interface AuthState {
   register: (data: { email: string; password: string; full_name: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (data: Partial<Pick<UserDTO, 'full_name' | 'target_band' | 'ai_persona' | 'avatar_url'>>) => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 async function getNotificationStore() {
@@ -29,7 +30,7 @@ async function getNotificationStore() {
  * Persist adapter dùng expo-secure-store.
  * Giữ user + authState qua Fast Refresh và app restart — không bắt user login lại.
  */
-const secureStorage = createJSONStorage<AuthState>(() => ({
+const secureStorage = createJSONStorage<any>(() => ({
   getItem: (key) => getSecureItem(key),
   setItem: (key, value) => setSecureItem(key, value),
   removeItem: (key) => deleteSecureItem(key),
@@ -163,6 +164,15 @@ export const useAuthStore = create<AuthState>()(
             body: JSON.stringify(data),
           });
           set((state) => ({ user: state.user ? { ...state.user, ...updated } : updated }));
+        },
+
+        refreshUser: async () => {
+          try {
+            const user = await apiFetch<UserDTO>('/auth/me');
+            set({ user });
+          } catch (e) {
+            console.error('[AuthStore] Failed to refresh user:', e);
+          }
         },
       };
     },

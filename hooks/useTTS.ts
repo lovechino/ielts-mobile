@@ -18,10 +18,11 @@ export function useTTS() {
 
   useEffect(() => {
     // Safe check for getVoicesAsync existence
-    if (typeof Speech.getVoicesAsync === 'function') {
-      Speech.getVoicesAsync()
+    const speechAny = Speech as any;
+    if (typeof speechAny.getVoicesAsync === 'function') {
+      speechAny.getVoicesAsync()
         .then(setAvailableVoices)
-        .catch((err) => console.warn('[TTS] Failed to get voices:', err));
+        .catch((err: any) => console.warn('[TTS] Failed to get voices:', err));
     }
   }, []);
 

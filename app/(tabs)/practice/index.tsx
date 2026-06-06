@@ -192,7 +192,7 @@ export default function PracticeScreen() {
         {/* ── Mini-games ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Trò chơi từ vựng</Text>
-          <Text style={styles.sectionSub}>Học qua chơi · Tích XP mỗi ngày</Text>
+          <Text style={styles.sectionSub}>Học qua chơi · Tích lũy xu mỗi ngày</Text>
           <View style={styles.gameList}>
             {GAMES.map((game) => (
               <GameCard

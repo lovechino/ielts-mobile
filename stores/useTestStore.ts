@@ -21,13 +21,14 @@ export interface TestStoreState {
   results: ProgressResultItem[] | null;
   score: number | null;
   writingFeedback: WritingAIFeedback | null;
+  rewardCoins: number | null;
 
   initLesson: (lessonId: string, title: string, passages: PassageDTO[], groups: GroupedQuestion[], timeLimitMinutes: number) => void;
   setAnswer: (questionId: string, answer: string) => void;
   decrementTime: () => void;
   setCurrentGroup: (index: number) => void;
   setSubmitting: (v: boolean) => void;
-  setCompleted: (results: ProgressResultItem[], score: number, writingFeedback?: WritingAIFeedback) => void;
+  setCompleted: (results: ProgressResultItem[], score: number, writingFeedback?: WritingAIFeedback, rewardCoins?: number) => void;
   getGroupAnswers: (groupId: string) => Record<string, string>;
   getAllQuestions: () => QuestionDTO[];
   getAnsweredCount: () => number;
@@ -51,6 +52,7 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
   results: null,
   score: null,
   writingFeedback: null,
+  rewardCoins: null,
 
   initLesson: (lessonId, title, passages, groups, timeLimitMinutes) =>
     set({
@@ -67,6 +69,7 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
       results: null,
       score: null,
       writingFeedback: null,
+      rewardCoins: null,
     }),
 
   setAnswer: (questionId, answer) =>
@@ -79,8 +82,15 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
 
   setSubmitting: (v) => set({ isSubmitting: v }),
 
-  setCompleted: (results, score, writingFeedback) =>
-    set({ isCompleted: true, results, score, writingFeedback: writingFeedback ?? null, isSubmitting: false }),
+  setCompleted: (results, score, writingFeedback, rewardCoins) =>
+    set({ 
+      isCompleted: true, 
+      results, 
+      score, 
+      writingFeedback: writingFeedback ?? null, 
+      rewardCoins: rewardCoins ?? null,
+      isSubmitting: false 
+    }),
 
   getGroupAnswers: (groupId) => {
     const { answers, groups } = get();
@@ -121,6 +131,7 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
       results: null,
       score: null,
       writingFeedback: null,
+      rewardCoins: null,
     }),
 
   resetForRetake: () => {
@@ -134,6 +145,7 @@ export const useTestStore = create<TestStoreState>((set, get) => ({
       results: null,
       score: null,
       writingFeedback: null,
+      rewardCoins: null,
     });
   },
 }));

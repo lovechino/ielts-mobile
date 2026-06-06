@@ -1,27 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { colors, spacing, radius } from '@/theme/tokens';
+import { colors, spacing, radius, shadow } from '@/theme/tokens';
 import { WordMatch } from '@/components/vocabulary/WordMatch';
 import { ScrambledLetters } from '@/components/vocabulary/ScrambledLetters';
 import { ListenType } from '@/components/vocabulary/ListenType';
 import { getPracticeWords, updateVaultWord } from '@/lib/offline/dictionary';
 import { calculateNextReview } from '@/lib/offline/srs';
 import { useGameStore } from '@/stores/useGameStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { FontAwesome } from '@expo/vector-icons';
-import { api } from '@/lib/api';
+import { api } from '@/lib/api/api';
 
 export default function PracticeScreen() {
   const { type } = useLocalSearchParams<{ type: 'match' | 'scramble' | 'listen_type' }>();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0); // For scramble/listen_type (one by one)
+  const [currentIndex, setCurrentIndex] = useState(0); 
   const [finished, setFinished] = useState(false);
 
-  const { score, xp, coins, startGame, endGame, addRewards, resetGame } = useGameStore();
+  const { score, coins, startGame, endGame, addRewards, resetGame } = useGameStore();
+  const { refreshUser, user } = useAuthStore();
 
   useEffect(() => {
     loadGameData();
@@ -29,9 +31,10 @@ export default function PracticeScreen() {
     return () => resetGame();
   }, [type]);
 
-  const syncRewards = async (finalXp: number, finalCoins: number) => {
+  const syncRewards = async (finalCoins: number) => {
     try {
-      await api.post('/stats/rewards', { xp: finalXp, coins: finalCoins });
+      await api.post('/stats/rewards', { xp: 0, coins: finalCoins });
+      await refreshUser();
     } catch (error) {
       console.error('Failed to sync rewards:', error);
     }
@@ -63,15 +66,12 @@ export default function PracticeScreen() {
   };
 
   const handleFinishMatch = async () => {
-    // For simplicity in Match game, we update all words as correct if finished
-    // because you can't "finish" without matching all.
     for (const word of data) {
       await updateSRS(word.id, true);
     }
-    const finalXp = Math.floor(score / 5);
     const finalCoins = Math.floor(score / 2);
-    addRewards(finalXp, finalCoins);
-    syncRewards(finalXp, finalCoins);
+    addRewards(finalCoins);
+    await syncRewards(finalCoins);
     setFinished(true);
     endGame();
   };
@@ -82,10 +82,9 @@ export default function PracticeScreen() {
     if (currentIndex + 1 < data.length) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      const finalXp = Math.floor(score / 5);
       const finalCoins = Math.floor(score / 2);
-      addRewards(finalXp, finalCoins);
-      syncRewards(finalXp, finalCoins);
+      addRewards(finalCoins);
+      await syncRewards(finalCoins);
       setFinished(true);
       endGame();
     }
@@ -122,10 +121,6 @@ export default function PracticeScreen() {
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>ĐIỂM SỐ</Text>
               <Text style={styles.statValue}>{Math.floor(score)}</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>KINH NGHIỆM</Text>
-              <Text style={[styles.statValue, { color: colors.primary }]}>+{Math.floor(xp)} XP</Text>
             </View>
           </View>
 
@@ -211,11 +206,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl2,
     padding: spacing.xl,
     alignItems: 'center',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
+    ...shadow.card,
   },
   resultTitle: { fontSize: 32, fontWeight: '800', color: colors.text, marginTop: spacing.lg },
   resultSubtitle: { fontSize: 16, color: colors.textSecondary, marginBottom: spacing.xl },

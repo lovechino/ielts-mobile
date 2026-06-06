@@ -12,7 +12,7 @@ import { FontAwesome } from '@expo/vector-icons';
 
 interface QuizGameProps {
   words: ContextWord[];
-  onFinish: () => void;
+  onFinish: (coins: number) => void;
 }
 
 interface Question {
@@ -72,7 +72,16 @@ export function QuizGame({ words, onFinish }: QuizGameProps) {
   }, []);
 
   if (finished) {
-    return <GameResult correct={correct} total={questions.length} xp={correct * 8} onDone={onFinish} onRetry={handleRetry} />;
+    const coins = correct * 5;
+    return (
+      <GameResult 
+        correct={correct} 
+        total={questions.length} 
+        coins={coins} 
+        onDone={() => onFinish(coins)} 
+        onRetry={handleRetry} 
+      />
+    );
   }
 
   const q = questions[index];
@@ -102,8 +111,8 @@ export function QuizGame({ words, onFinish }: QuizGameProps) {
         {/* Options */}
         <View style={styles.options}>
           {q.options.map((opt, i) => {
-            let bg = '#fff';
-            let border = colors.border;
+            let bg: string = '#fff';
+            let border: string = colors.border;
             if (selected !== null) {
               if (i === q.correctIndex) { bg = '#E8F5E9'; border = '#43A047'; }
               else if (i === selected) { bg = '#FFEBEE'; border = '#EF5350'; }

@@ -171,6 +171,10 @@ const styles = StyleSheet.create({
   feedbackBody: {
     ...typography.body, color: '#dbeafe', lineHeight: 22,
   },
+  sectionLabel: {
+    fontSize: 12, fontWeight: '800', color: colors.textMuted,
+    marginTop: spacing.md, marginBottom: spacing.xs, letterSpacing: 1,
+  },
   analysisBox: { width: '100%', gap: spacing.md, marginTop: spacing.sm },
   errorItem: {
     backgroundColor: colors.surface, borderRadius: radius.lg,

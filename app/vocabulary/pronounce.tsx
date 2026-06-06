@@ -571,7 +571,6 @@ const styles = StyleSheet.create({
     fontSize: 40,
     fontWeight: '800',
     color: colors.primary,
-    textAlign: 'center',
     letterSpacing: 1,
     flex: 1,
     textAlign: 'center',

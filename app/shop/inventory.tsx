@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     alignItems: 'center',
     borderWidth: 2,
-    ...shadow.sm,
+    ...shadow.card,
     position: 'relative',
   },
   equippedCard: { borderColor: colors.primary, backgroundColor: colors.primary + '05' },

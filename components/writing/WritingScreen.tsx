@@ -1,81 +1,24 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity,
-  Alert, ActivityIndicator, StyleSheet, Modal,
+  View, Text, ScrollView, TouchableOpacity, Alert,
+  ActivityIndicator, StyleSheet, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors, radius, spacing, shadow } from '@/theme/tokens';
 import type { LessonDTO } from '@/lib/api/types';
-import { WritingEditor } from './WritingEditor';
-import { Task1AcademicPrompt } from './Task1AcademicPrompt';
 import { Task1GeneralPrompt } from './Task1GeneralPrompt';
+import { Task1AcademicPrompt } from './Task1AcademicPrompt';
 import { Task2Prompt } from './Task2Prompt';
-import { ExamTimer } from '@/components/shared/ExamTimer';
-import { ExamResultModal, type WritingAIFeedback } from '@/components/shared/ExamResultModal';
-import { ScoringQueuedScreen } from '../shared/ScoringQueuedScreen';
-import { FontAwesome } from '@expo/vector-icons';
-import { submitAnswers, saveDraft } from '@/lib/api/progress';
+import { WritingEditor } from './WritingEditor';
+import { WordCountBar } from './WordCountBar';
+import { AutoSaveIndicator } from './AutoSaveIndicator';
 import { useWritingStore } from '@/stores/useWritingStore';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function detectEssayType(instruction: string): string {
-  const lower = instruction.toLowerCase();
-  if (lower.includes('discuss') || lower.includes('both views') || lower.includes('advantages and disadvantages')) return 'DISCUSSION';
-  if (lower.includes('problem') || lower.includes('solution') || lower.includes('cause') || lower.includes('measure')) return 'PROBLEM_SOLUTION';
-  if (lower.includes('opinion') || lower.includes('agree') || lower.includes('disagree') || lower.includes('to what extent')) return 'OPINION';
-  if (lower.includes('two') || lower.includes('second question')) return 'TWO_PART';
-  return 'DIRECT_QUESTION';
-}
-
-function extractBulletPoints(instruction: string): string[] {
-  const lines = instruction.split('\n').filter((l) => l.trim().startsWith('•') || l.trim().startsWith('-'));
-  if (lines.length > 0) return lines.map((l) => l.replace(/^[•\-]\s*/, '').trim());
-  const parenMatch = instruction.match(/\(([^)]+)\)/g);
-  if (parenMatch && parenMatch.length >= 2) return parenMatch.map((p) => p.replace(/[()]/g, ''));
-  return ['Explain the situation', 'Describe what you would like to happen', 'Suggest a resolution or next step'];
-}
-
-function detectTone(instruction: string): 'FORMAL' | 'SEMI_FORMAL' | 'INFORMAL' {
-  const lower = instruction.toLowerCase();
-  if (lower.includes('friend') || lower.includes('informal') || lower.includes('letter to a friend')) return 'INFORMAL';
-  if (lower.includes('manager') || lower.includes('newspaper') || lower.includes('complain') || lower.includes('formal')) return 'FORMAL';
-  return 'SEMI_FORMAL';
-}
-
-/**
- * Map ProgressDTO response → WritingAIFeedback shape.
- * Backend trả về feedback object trong results[0].feedback (JSON),
- * hoặc score tổng trong res.score.
- */
-function mapToWritingFeedback(res: any): WritingAIFeedback {
-  // Trường hợp backend trả về feedback object đầy đủ trong results[0]
-  const firstResult = res.results?.[0];
-  const rawFeedback = firstResult?.feedback;
-
-  if (rawFeedback && typeof rawFeedback === 'object') {
-    return {
-      overall_score: rawFeedback.overall_score ?? res.score ?? 0,
-      criteria_scores: rawFeedback.criteria_scores ?? undefined,
-      feedback: rawFeedback.feedback ?? undefined,
-      suggested_version: rawFeedback.suggested_version ?? undefined,
-      // New fields from expert scorer
-      word_count: rawFeedback.word_count ?? undefined,
-      detailed_errors: rawFeedback.detailed_errors ?? undefined,
-      sample_rewrite_segments: rawFeedback.sample_rewrite_segments ?? undefined,
-    };
-  }
-
-  // Fallback: chỉ có score tổng
-  return {
-    overall_score: res.score ?? 0,
-    criteria_scores: undefined,
-    feedback: firstResult?.correct_answer || undefined,
-    suggested_version: undefined,
-  };
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+import { useTestStore } from '@/stores/useTestStore';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { submitAnswers } from '@/lib/api/progress';
+import { ExamResultModal, type WritingAIFeedback } from '@/components/shared/ExamResultModal';
+import { ScoringQueuedScreen } from '@/components/shared/ScoringQueuedScreen';
+import { FontAwesome } from '@expo/vector-icons';
 
 interface WritingScreenProps {
   lesson: LessonDTO;
@@ -84,29 +27,25 @@ interface WritingScreenProps {
 
 export function WritingScreen({ lesson, timeLimitMinutes = 60 }: WritingScreenProps) {
   const router = useRouter();
-  const { clearDraft } = useWritingStore();
+  const lessonId = lesson.id;
+  const { drafts, autoSave, clearDraft, lastSavedAt } = useWritingStore();
+  const { setCompleted, rewardCoins } = useTestStore();
+  const { refreshUser } = useAuthStore();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const [isDeferred, setIsDeferred] = useState(false); // free user → deferred
-  const [deferredInfo, setDeferredInfo] = useState<{ estimatedMinutes: number; message: string } | null>(null);
-  const [writingFeedback, setWritingFeedback] = useState<WritingAIFeedback | undefined>();
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showResultModal, setShowResultModal] = useState(false);
-  const autoSubmittedRef = useRef(false);
+  const [writingFeedback, setWritingFeedback] = useState<WritingAIFeedback | null>(null);
 
-  const instruction = lesson.content || lesson.passages?.[0]?.content_html || '';
-  const lessonId = lesson.id;
-  const group = lesson.question_groups?.[0];
-  const groupType = group?.group_type || 'WRITING_TASK2';
-  const isTask1 = groupType === 'WRITING_TASK1';
-  const isAcademic = !instruction.toLowerCase().includes('general training') && !instruction.toLowerCase().includes('letter');
-  const essayType = isTask1 ? null : detectEssayType(instruction);
-  const taskId = `${lessonId}_${groupType}`;
-  const minWords = isTask1 ? 150 : 250;
-  const recWords = isTask1 ? 170 : 280;
+  const [isDeferred, setIsDeferred] = useState(false);
+  const [deferredInfo, setDeferredInfo] = useState<{ estimatedMinutes: number; message: string } | null>(null);
 
-  // Hiện result modal khi hoàn thành
+  const [isCompleted, setIsCompleted] = useState(false);
+
+  const taskId = lesson.questions?.[0]?.id || 'default-task';
+  const taskType = lesson.passages?.[0]?.task_type || 'report';
+  const isTask2 = taskId.includes('task2') || lesson.title.toUpperCase().includes('TASK 2');
+
   useEffect(() => {
     if (isCompleted) setShowResultModal(true);
   }, [isCompleted]);
@@ -141,8 +80,11 @@ export function WritingScreen({ lesson, timeLimitMinutes = 60 }: WritingScreenPr
       }
 
       // Premium → immediate result
-      setWritingFeedback(mapToWritingFeedback(res));
+      const feedback = mapToWritingFeedback(res);
+      setWritingFeedback(feedback);
+      setCompleted(res.results || [], res.score || 0, feedback, (res as any).coins_awarded);
       setIsCompleted(true);
+      refreshUser();
     } catch (err: any) {
       Alert.alert('Lỗi', err?.message || 'Không thể nộp bài. Vui lòng thử lại.');
     } finally {
@@ -150,133 +92,88 @@ export function WritingScreen({ lesson, timeLimitMinutes = 60 }: WritingScreenPr
     }
   }, [lessonId, taskId, isSubmitting]);
 
-  // Auto-submit khi hết giờ — không hỏi lại
-  const handleTimeUp = useCallback(() => {
-    if (autoSubmittedRef.current) return;
-    autoSubmittedRef.current = true;
-    handleSubmit();
-  }, [handleSubmit]);
+  const mapToWritingFeedback = (apiRes: any): WritingAIFeedback => {
+    const mainResult = apiRes.results?.[0]?.feedback;
+    return {
+      overall_score: mainResult?.overall_score ?? apiRes.score ?? 0,
+      criteria_scores: mainResult?.criteria_scores || {},
+      feedback: mainResult?.feedback || '',
+      detailed_errors: mainResult?.detailed_errors || [],
+      suggested_version: mainResult?.suggested_version || '',
+    };
+  };
 
-  const handleRetake = useCallback(async () => {
-    setShowResultModal(false);
-    clearDraft(taskId);
-    if (lessonId) {
-      try {
-        await saveDraft({ lesson_id: lessonId, draft_answers: {}, time_left: timeLimitMinutes * 60 });
-      } catch { /* ignore */ }
-    }
-    setIsCompleted(false);
-    setWritingFeedback(undefined);
-    autoSubmittedRef.current = false;
-  }, [lessonId, taskId, timeLimitMinutes, clearDraft]);
-
-  if (!lesson) return null;
-
-  // Free user: hiện màn hình thông báo "kết quả sẽ có sau"
   if (isCompleted && isDeferred && deferredInfo) {
     return (
       <ScoringQueuedScreen
         lessonTitle={lesson.title}
         estimatedMinutes={deferredInfo.estimatedMinutes}
         message={deferredInfo.message}
-        onGoHome={() => { clearDraft(taskId); router.replace('/(tabs)'); }}
-        onGoHistory={() => { clearDraft(taskId); router.replace('/(tabs)/test'); }}
+        onGoHome={() => router.replace('/(tabs)')}
+        onGoHistory={() => router.replace('/(tabs)/test')}
       />
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{lesson.title || 'Writing Test'}</Text>
-        {!isCompleted && <ExamTimer onTimeUp={handleTimeUp} />}
+        <Text style={styles.headerTitle} numberOfLines={1}>{lesson.title}</Text>
+        <AutoSaveIndicator lastSavedAt={lastSavedAt[taskId] || null} />
       </View>
 
-      {/* Content */}
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {isTask1 && isAcademic && (
-          <Task1AcademicPrompt
-            visualType={group?.config?.visual_type || 'NONE'}
-            imageUrl={group?.config?.image_url || lesson.passages?.[0]?.content_html?.match(/https?:\/\/[^\s]+\.(png|jpg|jpeg|gif)/i)?.[0]}
-            instruction={instruction}
+      <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {isTask2 ? (
+          <Task2Prompt 
+            instruction={lesson.passages?.[0]?.content_html || ''} 
+            essayType={lesson.passages?.[0]?.essay_type || 'DISCUSSION'} 
           />
-        )}
-        {isTask1 && !isAcademic && (
-          <Task1GeneralPrompt
-            instruction={instruction}
-            bulletPoints={extractBulletPoints(instruction)}
-            toneRequired={detectTone(instruction)}
-          />
-        )}
-        {!isTask1 && (
-          <Task2Prompt
-            instruction={instruction}
-            essayType={essayType || 'DISCUSSION'}
-          />
+        ) : (
+          taskType === 'report' ? (
+            <Task1AcademicPrompt
+              instruction={lesson.passages?.[0]?.content_html || ''}
+              imageUrl={lesson.passages?.[0]?.image_url || undefined}
+              visualType={lesson.passages?.[0]?.visual_type || 'BAR_CHART'}
+            />
+          ) : (
+            <Task1GeneralPrompt 
+              instruction={lesson.passages?.[0]?.content_html || ''} 
+              bulletPoints={lesson.passages?.[0]?.bullet_points || []}
+              toneRequired={(lesson.passages?.[0]?.essay_type as any) || 'SEMI_FORMAL'}
+            />
+          )
         )}
 
         <WritingEditor
           taskId={taskId}
           lessonId={lessonId}
-          minWords={minWords}
-          recommendedWords={recWords}
-          placeholder={`Write your ${isTask1 ? 'Task 1' : 'Task 2'} essay here...`}
-          editable={!isCompleted}
+          minWords={isTask2 ? 250 : 150}
+          placeholder="Nhập nội dung bài viết tại đây..."
         />
-
-        {/* Submitting overlay hint */}
-        {isSubmitting && (
-          <View style={styles.scoringBanner}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={styles.scoringText}>AI đang chấm điểm bài viết của bạn...</Text>
-          </View>
-        )}
       </ScrollView>
 
-      {/* Bottom bar — ẩn khi đã nộp */}
-      {!isCompleted && (
-        <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={styles.countBtn}
-            onPress={() => {
-              const text = useWritingStore.getState().drafts[taskId] || '';
-              const wc = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-              Alert.alert('Word Count', `Hiện tại: ${wc} từ\nTối thiểu: ${minWords} từ\nKhuyến nghị: ${recWords}+ từ`);
-            }}
-          >
-            <FontAwesome name="info-circle" size={16} color={colors.primary} />
-            <Text style={styles.countBtnText}>Đếm từ</Text>
-          </TouchableOpacity>
+      <View style={styles.bottomBar}>
+        <WordCountBar 
+          current={drafts[taskId]?.split(/\s+/).filter(Boolean).length || 0} 
+          min={isTask2 ? 250 : 150} 
+        />
+        <TouchableOpacity
+          style={styles.submitBtn}
+          onPress={() => setShowSubmitModal(true)}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.submitText}>Submit</Text>}
+        </TouchableOpacity>
+      </View>
 
-          <TouchableOpacity
-            style={styles.submitBtn}
-            onPress={() => setShowSubmitModal(true)}
-            disabled={isSubmitting}
-          >
-            {isSubmitting
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.submitText}>Nộp bài</Text>}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Submit confirm modal */}
       <Modal visible={showSubmitModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <FontAwesome name="pencil-square" size={44} color={colors.primary} style={{ marginBottom: spacing.md }} />
-            <Text style={styles.modalTitle}>Nộp bài Writing?</Text>
-            <Text style={styles.modalText}>
-              Bài viết sẽ được AI chấm điểm theo tiêu chí IELTS. Không thể chỉnh sửa sau khi nộp.
-            </Text>
+            <Text style={styles.modalTitle}>Xác nhận nộp bài?</Text>
+            <Text style={styles.modalSub}>Bạn không thể chỉnh sửa sau khi đã nộp.</Text>
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowSubmitModal(false)}>
                 <Text style={styles.cancelText}>Xem lại</Text>
@@ -289,7 +186,6 @@ export function WritingScreen({ lesson, timeLimitMinutes = 60 }: WritingScreenPr
         </View>
       </Modal>
 
-      {/* Result modal */}
       <ExamResultModal
         visible={showResultModal}
         lessonTitle={lesson.title}
@@ -297,14 +193,13 @@ export function WritingScreen({ lesson, timeLimitMinutes = 60 }: WritingScreenPr
         score={writingFeedback?.overall_score ?? 0}
         totalQuestions={1}
         results={[]}
-        writingFeedback={writingFeedback}
+        writingFeedback={writingFeedback || undefined}
+        rewardCoins={rewardCoins}
         onDone={() => { setShowResultModal(false); clearDraft(taskId); router.back(); }}
       />
     </View>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
@@ -317,48 +212,25 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.text },
   scrollArea: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingBottom: 100, gap: spacing.md },
-  scoringBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.primaryFixed, borderRadius: radius.lg,
-    padding: spacing.md, marginTop: spacing.sm,
-  },
-  scoringText: { fontSize: 14, color: colors.primary, fontWeight: '600', flex: 1 },
   bottomBar: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    backgroundColor: '#fff', borderTopWidth: 1, borderColor: colors.border,
+    padding: spacing.md, backgroundColor: '#fff', borderTopWidth: 1, borderColor: colors.border,
   },
-  countBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderRadius: radius.md, backgroundColor: colors.surfaceContainerLow,
-  },
-  countBtnText: { fontSize: 14, fontWeight: '700', color: colors.primary },
   submitBtn: {
-    flex: 1, alignItems: 'center', paddingVertical: spacing.sm + 2,
-    borderRadius: radius.md, backgroundColor: colors.primary,
+    width: '100%', alignItems: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.lg, backgroundColor: colors.primary, marginTop: spacing.sm,
   },
   submitText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  // Modal
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center', alignItems: 'center', padding: spacing.lg,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: spacing.xl,
   },
   modalCard: {
-    backgroundColor: '#fff', borderRadius: radius.xl, padding: spacing.lg,
-    width: '100%', maxWidth: 340, alignItems: 'center', ...shadow.card,
+    backgroundColor: '#fff', borderRadius: radius.xl, padding: spacing.xl, alignItems: 'center',
   },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-  modalText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.lg, lineHeight: 20 },
-  modalActions: { flexDirection: 'row', gap: spacing.sm, width: '100%' },
-  cancelBtn: {
-    flex: 1, padding: spacing.md, borderRadius: radius.md,
-    borderWidth: 1.5, borderColor: colors.border, alignItems: 'center',
-  },
-  cancelText: { fontSize: 15, fontWeight: '600', color: colors.text },
-  confirmBtn: {
-    flex: 1, padding: spacing.md, borderRadius: radius.md,
-    backgroundColor: colors.primary, alignItems: 'center',
-  },
-  confirmText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 8 },
+  modalSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: 24 },
+  modalActions: { flexDirection: 'row', gap: spacing.md },
+  cancelBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  cancelText: { fontWeight: '700', color: colors.textSecondary },
+  confirmBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.primary },
+  confirmText: { fontWeight: '700', color: '#fff' },
 });

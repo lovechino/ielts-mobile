@@ -11,7 +11,7 @@ import { FontAwesome } from '@expo/vector-icons';
 
 interface MatchingGameProps {
   words: ContextWord[];
-  onFinish: () => void;
+  onFinish: (coins: number) => void;
 }
 
 const ROUND_SIZE = 6; // 6 cặp mỗi round
@@ -82,7 +82,16 @@ export function MatchingGame({ words, onFinish }: MatchingGameProps) {
   const handleRetry = () => { setRound(0); setTotalCorrect(0); setFinished(false); };
 
   if (finished) {
-    return <GameResult correct={totalCorrect} total={totalWords} xp={totalCorrect * 8} onDone={onFinish} onRetry={handleRetry} />;
+    const coins = totalCorrect * 4;
+    return (
+      <GameResult 
+        correct={totalCorrect} 
+        total={totalWords} 
+        coins={coins} 
+        onDone={() => onFinish(coins)} 
+        onRetry={handleRetry} 
+      />
+    );
   }
 
   return (

@@ -18,6 +18,7 @@ import { colors, spacing, radius, shadow } from '@/theme/tokens';
 import { getPracticeWords, updateVaultWord } from '@/lib/offline/dictionary';
 import { calculateNextReview } from '@/lib/offline/srs';
 import { useGameStore } from '@/stores/useGameStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { useTTS } from '@/hooks/useTTS';
 import { api } from '@/lib/api/api';
 
@@ -168,7 +169,8 @@ export default function FlashcardScreen() {
   const [easyCount, setEasyCount] = useState(0);
   const [hardCount, setHardCount] = useState(0);
 
-  const { score, xp, coins, startGame, endGame, addRewards, addScore, incrementCombo, resetCombo, resetGame } = useGameStore();
+  const { score, coins, startGame, endGame, addRewards, addScore, incrementCombo, resetCombo, resetGame } = useGameStore();
+  const { refreshUser } = useAuthStore();
 
   useEffect(() => {
     loadCards();
@@ -211,12 +213,20 @@ export default function FlashcardScreen() {
     }
 
     if (index + 1 >= cards.length) {
-      const finalXp = Math.round(score / 5);
       const finalCoins = Math.round(score / 2);
-      addRewards(finalXp, finalCoins);
+      addRewards(finalCoins);
       endGame();
-      // Sync to server
-      try { await api.post('/stats/rewards', { xp: finalXp, coins: finalCoins }); } catch {}
+      
+      // Sync to server and refresh user state
+      (async () => {
+        try { 
+          await api.post('/stats/rewards', { xp: 0, coins: finalCoins }); 
+          await refreshUser();
+        } catch (e) {
+          console.error('[Flashcard] Sync failed:', e);
+        }
+      })();
+
       setFinished(true);
     } else {
       setIndex((i) => i + 1);
@@ -262,10 +272,6 @@ export default function FlashcardScreen() {
                 <Text style={styles.statVal}>{hardCount}</Text>
                 <Text style={styles.statLbl}>Khó / Lại</Text>
               </View>
-              <View style={styles.statBox}>
-                <Text style={[styles.statVal, { color: colors.primary }]}>+{Math.round(xp)} XP</Text>
-                <Text style={styles.statLbl}>Kinh nghiệm</Text>
-              </View>
             </View>
 
             <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()}>
@@ -306,7 +312,7 @@ export default function FlashcardScreen() {
       {/* Score strip */}
       <View style={styles.scoreStrip}>
         <View style={styles.scoreItem}>
-          <FontAwesome name="bolt" size={13} color="#FDCB6E" />
+          <FontAwesome name="database" size={13} color="#FDCB6E" />
           <Text style={styles.scoreVal}>{Math.floor(score)}</Text>
         </View>
         <View style={styles.scoreItem}>

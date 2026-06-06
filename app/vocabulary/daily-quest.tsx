@@ -38,7 +38,7 @@ export default function DailyQuestScreen() {
     try {
       const res = await api.post('/daily/claim', { challenge_id: challenge.id });
       if (res.success) {
-        Alert.alert('Chúc mừng!', 'Bạn đã nhận được 100 XP và 50 Xu.');
+        Alert.alert('Chúc mừng!', 'Bạn đã nhận được 50 Xu.');
         loadTodayChallenge(); // Refresh state
       }
     } catch (error: any) {
@@ -88,7 +88,7 @@ export default function DailyQuestScreen() {
               <Text style={styles.topicTitle}>{challenge.topic}</Text>
               <View style={styles.rewardBadge}>
                 <FontAwesome name="database" size={12} color="#F9CA24" />
-                <Text style={styles.rewardText}>Thưởng: 100 XP & 50 Xu</Text>
+                <Text style={styles.rewardText}>Thưởng: 50 Xu</Text>
               </View>
             </View>
             <Image 
@@ -248,3 +248,4 @@ const styles = StyleSheet.create({
   backBtn: { paddingHorizontal: 30, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: radius.md },
   backBtnText: { color: '#fff', fontWeight: '700' },
 });
+

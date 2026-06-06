@@ -18,7 +18,7 @@ const CARD_H = 320;
 
 interface FlashcardContextGameProps {
   words: ContextWord[];
-  onFinish: () => void;
+  onFinish: (coins: number) => void;
 }
 
 function FlipCard({ card, onRate }: { card: ContextWord; onRate: (r: 'easy' | 'hard' | 'again') => void }) {
@@ -107,7 +107,18 @@ export function FlashcardContextGame({ words, onFinish }: FlashcardContextGamePr
 
   const handleRetry = () => { setIndex(0); setEasyCount(0); setFinished(false); };
 
-  if (finished) return <GameResult correct={easyCount} total={words.length} xp={easyCount * 6} onDone={onFinish} onRetry={handleRetry} />;
+  if (finished) {
+    const coins = easyCount * 3;
+    return (
+      <GameResult 
+        correct={easyCount} 
+        total={words.length} 
+        coins={coins} 
+        onDone={() => onFinish(coins)} 
+        onRetry={handleRetry} 
+      />
+    );
+  }
 
   const progress = (index + 1) / words.length;
 

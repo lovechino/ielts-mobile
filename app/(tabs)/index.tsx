@@ -121,10 +121,6 @@ export default function HomeScreen() {
             <Text style={styles.greetingText}>Chào {user?.full_name?.split(' ')[0] || 'bạn'},</Text>
             <Text style={styles.subGreeting}>Hôm nay bạn muốn luyện gì?</Text>
           </View>
-          <View style={styles.xpBadge}>
-            <FontAwesome name="bolt" size={14} color="#FDCB6E" />
-            <Text style={styles.xpText}>{(user as any)?.xp || 0} XP</Text>
-          </View>
         </GlassCard>
 
         <StatsGrid items={stats} />
@@ -243,20 +239,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.outline,
     marginTop: 2,
-  },
-  xpBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FDCB6E20',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.full,
-    gap: 6,
-  },
-  xpText: {
-    color: '#E17055',
-    fontWeight: 'bold',
-    fontSize: 14,
   },
   section: {
     marginTop: spacing.md,

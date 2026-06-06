@@ -76,11 +76,12 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '700', color: colors.primary },
   backBtn: { padding: spacing.xs },
   coinBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.unit,
-    borderRadius: 20, backgroundColor: 'rgba(111,251,190,0.3)',
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: spacing.sm, paddingVertical: 4,
+    borderRadius: 20, backgroundColor: '#FEF9E7',
+    borderWidth: 1, borderColor: '#F1C40F40',
   },
-  coinText: { fontSize: 13, fontWeight: '700', color: colors.tertiary },
+  coinText: { fontSize: 13, fontWeight: '700', color: '#B7950B' },
   iconBtn: { padding: spacing.sm },
   rightLabel: { fontSize: 14, color: colors.accent, fontWeight: '600' },
 });

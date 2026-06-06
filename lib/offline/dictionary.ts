@@ -602,30 +602,31 @@ export const getSystemVocabStats = async () => {
 
 export const toggleMasteredStatus = async (vocabId: number) => {
   const database = await initDictionaryDB();
-  
-  // Sử dụng transaction để đảm bảo tính nhất quán (Atomic)
-  return await database.withTransactionAsync(async () => {
+  let newStatus: "mastered" | "learning" | undefined;
+
+  await database.withTransactionAsync(async () => {
     const current = await database.getFirstAsync<{ status: string }>(
       'SELECT status FROM user_word_vault WHERE vocab_id = ?',
       [vocabId]
     );
 
     if (current) {
-      const newStatus = current.status === 'mastered' ? 'learning' : 'mastered';
+      newStatus = current.status === 'mastered' ? 'learning' : 'mastered';
       await database.runAsync(
         "UPDATE user_word_vault SET status = ?, updated_at = (strftime('%s', 'now')) WHERE vocab_id = ?",
         [newStatus, vocabId]
       );
-      return newStatus;
     } else {
+      newStatus = 'mastered';
       const id = Crypto.randomUUID();
       await database.runAsync(
         'INSERT INTO user_word_vault (id, vocab_id, status, group_name) VALUES (?, ?, ?, ?)',
         [id, vocabId, 'mastered', 'General']
       );
-      return 'mastered';
     }
   });
+
+  return newStatus;
 };
 
 export const addBundleToVault = async (bundleId: string, groupName: string) => {

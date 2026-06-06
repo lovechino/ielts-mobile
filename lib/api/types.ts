@@ -28,6 +28,7 @@ export interface LessonDTO {
   speaking_part?: number | null;
   passages?: PassageDTO[];
   question_groups?: QuestionGroupDTO[];
+  questions?: QuestionDTO[];
 }
 
 export interface PassageDTO {
@@ -39,7 +40,12 @@ export interface PassageDTO {
   /** IELTS part number (1, 2, or 3). Used for grouped rendering in mixed-part tests. */
   part?: number | null;
   audio_url?: string | null;
+  image_url?: string | null;
   transcript?: string | null;
+  task_type?: string | null;
+  visual_type?: string | null;
+  essay_type?: string | null;
+  bullet_points?: string[] | null;
 }
 
 export interface QuestionGroupDTO {
@@ -79,8 +85,10 @@ export interface UserDTO {
   role: string;
   target_band?: number | null;
   avatar_url?: string | null;
+  avatar_frame?: string | null;
   ai_persona?: string | null;
   coins?: number;
+  gems?: number;
   xp?: number;
   enrolled_courses?: EnrolledCourseDTO[];
 }
@@ -134,6 +142,12 @@ export interface ProgressResultItem {
     };
     feedback?: string;
     suggested_version?: string;
+    detailed_errors?: Array<{
+      original: string;
+      corrected: string;
+      error_type: string;
+      explanation_vi: string;
+    }>;
   };
 }
 

@@ -15,7 +15,7 @@ import { FontAwesome } from '@expo/vector-icons';
 
 interface TypingGameProps {
   words: ContextWord[];
-  onFinish: () => void;
+  onFinish: (coins: number) => void;
 }
 
 export function TypingGame({ words, onFinish }: TypingGameProps) {
@@ -62,7 +62,18 @@ export function TypingGame({ words, onFinish }: TypingGameProps) {
 
   const handleRetry = () => { setIndex(0); setInput(''); setResult(null); setCorrect(0); setFinished(false); };
 
-  if (finished) return <GameResult correct={correct} total={words.length} xp={correct * 10} onDone={onFinish} onRetry={handleRetry} />;
+  if (finished) {
+    const coins = correct * 8;
+    return (
+      <GameResult 
+        correct={correct} 
+        total={words.length} 
+        coins={coins} 
+        onDone={() => onFinish(coins)} 
+        onRetry={handleRetry} 
+      />
+    );
+  }
 
   const progress = (index + 1) / words.length;
 

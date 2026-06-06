@@ -1,13 +1,11 @@
-/**
- * Minigame Dispatcher — nhận mode + context params, render đúng game.
- * Route: /vocabulary/minigame?mode=quiz&groupBy=topic&groupValue=Environment
- */
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { colors, spacing } from '@/theme/tokens';
 import { loadContextWords, ContextWord } from '@/lib/offline/vocabContext';
+import { api } from '@/lib/api/api';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 import { QuizGame } from '@/components/games/QuizGame';
 import { TypingGame } from '@/components/games/TypingGame';
@@ -23,6 +21,7 @@ const MIN_WORDS: Record<string, number> = {
 
 export default function MinigameScreen() {
   const router = useRouter();
+  const { refreshUser } = useAuthStore();
   const { mode, groupBy, groupValue } = useLocalSearchParams<{
     mode: string; groupBy: string; groupValue: string;
   }>();
@@ -57,6 +56,23 @@ export default function MinigameScreen() {
     }
   };
 
+  const syncRewards = async (coins: number) => {
+    if (coins <= 0) return;
+    try {
+      await api.post('/stats/rewards', { xp: 0, coins });
+      await refreshUser(); // Đợi refresh xong mới tiếp tục
+    } catch (e) {
+      console.error('[Minigame] Failed to sync rewards:', e);
+    }
+  };
+
+  const onFinish = async (coins: number = 0) => {
+    if (typeof coins === 'number' && coins > 0) {
+      await syncRewards(coins);
+    }
+    router.back();
+  };
+
   const title = {
     flashcard: 'Flashcard', quiz: 'Quiz', listening: 'Nghe & Gõ',
     typing: 'Typing', matching: 'Ghép cặp', combined: 'Tổng hợp',
@@ -86,8 +102,6 @@ export default function MinigameScreen() {
       </Screen>
     );
   }
-
-  const onFinish = () => router.back();
 
   return (
     <Screen>

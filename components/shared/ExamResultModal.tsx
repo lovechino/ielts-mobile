@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme/tokens';
+import { colors, radius, spacing, shadow } from '@/theme/tokens';
 import type { ProgressResultItem } from '@/lib/api/types';
 import { ReadingListeningReport } from './ExamResult/ReadingListeningReport';
 import { WritingReport, type WritingAIFeedback } from './ExamResult/WritingReport';
@@ -16,13 +16,14 @@ interface ExamResultModalProps {
   totalQuestions: number;
   results: ProgressResultItem[];
   writingFeedback?: WritingAIFeedback;
+  rewardCoins?: number | null;
   onDone: () => void;
 }
 
 export function ExamResultModal({
   visible, lessonTitle, lessonType,
   score, totalQuestions, results,
-  writingFeedback, onDone,
+  writingFeedback, rewardCoins, onDone,
 }: ExamResultModalProps) {
   const isWriting = lessonType === 'writing';
 
@@ -46,6 +47,16 @@ export function ExamResultModal({
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
+            {!!rewardCoins && rewardCoins > 0 && (
+              <View style={styles.rewardBanner}>
+                <FontAwesome name="database" size={24} color="#F1C40F" />
+                <View>
+                  <Text style={styles.rewardTitle}>Thưởng hoàn thành</Text>
+                  <Text style={styles.rewardValue}>+{rewardCoins} Xu</Text>
+                </View>
+              </View>
+            )}
+
             {isWriting ? (
               <WritingReport score={score} feedback={writingFeedback} />
             ) : (
@@ -118,4 +129,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
+  rewardBanner: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: '#FEF9E7',
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#F1C40F40',
+    marginBottom: spacing.xs,
+    ...shadow.card,
+  },
+  rewardTitle: { fontSize: 12, fontWeight: '600', color: '#B7950B', textTransform: 'uppercase' },
+  rewardValue: { fontSize: 20, fontWeight: '800', color: '#B7950B' },
 });

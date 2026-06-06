@@ -4,7 +4,6 @@ interface GameState {
   score: number;
   combo: number;
   maxCombo: number;
-  xp: number;
   coins: number;
   isPlaying: boolean;
   gameType: 'match' | 'scramble' | 'flashcard' | 'listen_type' | null;
@@ -15,7 +14,7 @@ interface GameState {
   addScore: (points: number) => void;
   resetCombo: () => void;
   incrementCombo: () => void;
-  addRewards: (xp: number, coins: number) => void;
+  addRewards: (coins: number) => void;
   resetGame: () => void;
 }
 
@@ -23,7 +22,6 @@ export const useGameStore = create<GameState>((set) => ({
   score: 0,
   combo: 0,
   maxCombo: 0,
-  xp: 0,
   coins: 0,
   isPlaying: false,
   gameType: null,
@@ -52,8 +50,7 @@ export const useGameStore = create<GameState>((set) => ({
 
   resetCombo: () => set({ combo: 0 }),
 
-  addRewards: (xp, coins) => set((state) => ({
-    xp: state.xp + xp,
+  addRewards: (coins) => set((state) => ({
     coins: state.coins + coins,
   })),
 

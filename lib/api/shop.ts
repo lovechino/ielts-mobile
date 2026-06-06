@@ -21,8 +21,10 @@ export interface InventoryItem extends ShopItem {
   expires_at: string | null;
 }
 
+import { STORAGE_KEYS } from '@/lib/storage';
+
 async function getAuthHeader() {
-  const token = await getSecureItem('access_token');
+  const token = await getSecureItem(STORAGE_KEYS.ACCESS_TOKEN);
   return { 'Authorization': `Bearer ${token}` };
 }
 

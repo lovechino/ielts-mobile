@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Sty
 import { useRouter } from 'expo-router';
 import { colors, radius, spacing, shadow } from '@/theme/tokens';
 import { useTestStore } from '@/stores/useTestStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import type { GroupedQuestion } from '@/stores/useTestStore';
 import type { LessonDTO, PassageDTO, QuestionGroupDTO } from '@/lib/api/types';
 import { PassageViewer } from './PassageViewer';
@@ -29,9 +30,10 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
   const {
     initLesson, setAnswer, setSubmitting, setCompleted,
     answers, groups, setCurrentGroup,
-    isSubmitting, isCompleted, results, score,
+    isSubmitting, isCompleted, results, score, rewardCoins,
     lessonId, lessonTitle, resetForRetake,
   } = useTestStore();
+  const { refreshUser } = useAuthStore();
 
   const [showAnswerSheet, setShowAnswerSheet] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -87,7 +89,8 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
         return;
       }
 
-      setCompleted(res.results || [], res.score || 0);
+      setCompleted(res.results || [], res.score || 0, undefined, (res as any).coins_awarded);
+      refreshUser();
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to submit answers.');
       setSubmitting(false);
@@ -119,14 +122,11 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
   }, [lessonId, timeLimitMinutes, resetForRetake]);
 
   // --- Mixed-part grouped rendering ---
-  // Derives which parts to render from lesson.lesson_parts (e.g. [1,3]).
-  // Falls back to rendering all content without part headers if lesson_parts is absent.
   const renderPartSections = useCallback(() => {
     const allPassages = lesson.passages ?? [];
     const allGroups = groups;
     const partsToRender = lesson.lesson_parts;
 
-    // No explicit part config → render flat (backwards-compatible)
     if (!partsToRender || partsToRender.length === 0) {
       return (
         <>
@@ -147,11 +147,9 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
       );
     }
 
-    // Render each active part in order
     return partsToRender.map((partNum) => {
       const partPassages = allPassages.filter((p) => (p.part ?? 1) === partNum);
       const partGroups = allGroups.filter((g) => (g.group.part ?? 1) === partNum);
-      // Use first passage title as part title if available
       const partTitle = partPassages[0]?.title ?? null;
 
       return (
@@ -183,7 +181,6 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
     );
   }
 
-  // Free user: hiện màn hình thông báo deferred
   if (isCompleted && isDeferred && deferredInfo) {
     return (
       <ScoringQueuedScreen
@@ -265,10 +262,10 @@ export function ReadingScreen({ lesson, groupedQuestions, timeLimitMinutes = 60 
         score={score ?? 0}
         totalQuestions={totalQuestions}
         results={results ?? []}
+        rewardCoins={rewardCoins}
         onDone={() => { setShowResultModal(false); router.back(); }}
       />
 
-      {/* Dictionary overlay — tra từ nhanh trong bài đọc */}
       <DictionaryOverlay />
     </View>
   );

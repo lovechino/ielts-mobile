@@ -16,7 +16,7 @@ import { FontAwesome } from '@expo/vector-icons';
 
 interface ListeningGameProps {
   words: ContextWord[];
-  onFinish: () => void;
+  onFinish: (coins: number) => void;
 }
 
 export function ListeningGame({ words, onFinish }: ListeningGameProps) {
@@ -69,7 +69,18 @@ export function ListeningGame({ words, onFinish }: ListeningGameProps) {
 
   const handleRetry = () => { setIndex(0); setInput(''); setResult(null); setCorrect(0); setFinished(false); };
 
-  if (finished) return <GameResult correct={correct} total={words.length} xp={correct * 12} onDone={onFinish} onRetry={handleRetry} />;
+  if (finished) {
+    const coins = correct * 10;
+    return (
+      <GameResult 
+        correct={correct} 
+        total={words.length} 
+        coins={coins} 
+        onDone={() => onFinish(coins)} 
+        onRetry={handleRetry} 
+      />
+    );
+  }
 
   const progress = (index + 1) / words.length;
 

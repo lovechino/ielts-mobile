@@ -9,12 +9,12 @@ import { FontAwesome } from '@expo/vector-icons';
 interface GameResultProps {
   correct: number;
   total: number;
-  xp: number;
+  coins: number;
   onDone: () => void;
   onRetry: () => void;
 }
 
-export function GameResult({ correct, total, xp, onDone, onRetry }: GameResultProps) {
+export function GameResult({ correct, total, coins, onDone, onRetry }: GameResultProps) {
   const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
   const grade = pct >= 80 ? { label: 'Xuất sắc! 🏆', color: '#00B894' }
     : pct >= 60 ? { label: 'Tốt lắm! 👏', color: '#FDCB6E' }
@@ -31,10 +31,10 @@ export function GameResult({ correct, total, xp, onDone, onRetry }: GameResultPr
           <Text style={styles.ringLabel}>{correct}/{total} đúng</Text>
         </View>
 
-        {/* XP */}
-        <View style={styles.xpRow}>
-          <FontAwesome name="bolt" size={14} color="#FDCB6E" />
-          <Text style={styles.xpText}>+{xp} XP</Text>
+        {/* Coins */}
+        <View style={styles.coinRow}>
+          <FontAwesome name="database" size={14} color="#F1C40F" />
+          <Text style={styles.coinText}>+{coins} Xu</Text>
         </View>
 
         <View style={styles.btnRow}>
@@ -58,8 +58,8 @@ const styles = StyleSheet.create({
   ring: { width: 120, height: 120, borderRadius: 60, borderWidth: 8, alignItems: 'center', justifyContent: 'center' },
   ringPct: { fontSize: 28, fontWeight: '800' },
   ringLabel: { fontSize: 12, color: colors.textMuted },
-  xpRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF9E6', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill },
-  xpText: { fontSize: 14, fontWeight: '700', color: '#E17055' },
+  coinRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF9E7', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill, borderWidth: 1, borderColor: '#F1C40F40' },
+  coinText: { fontSize: 14, fontWeight: '700', color: '#B7950B' },
   btnRow: { flexDirection: 'row', gap: spacing.md, width: '100%' },
   retryBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.primary },
   retryText: { fontSize: 15, fontWeight: '700', color: colors.primary },

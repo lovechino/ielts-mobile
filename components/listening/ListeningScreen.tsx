@@ -3,11 +3,11 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Sty
 import { useRouter } from 'expo-router';
 import { colors, radius, spacing, shadow } from '@/theme/tokens';
 import { useTestStore } from '@/stores/useTestStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import type { GroupedQuestion } from '@/stores/useTestStore';
-import type { LessonDTO, PassageDTO } from '@/lib/api/types';
+import type { LessonDTO, QuestionDTO, QuestionGroupDTO } from '@/lib/api/types';
 import { AudioController } from './AudioController';
 import { ListeningGroupRenderer } from './ListeningGroupRenderer';
-import { useAudioSync } from './useAudioSync';
 import { ExamTimer } from '@/components/shared/ExamTimer';
 import { AnswerSheetPanel } from '@/components/shared/AnswerSheetPanel';
 import { SubmitModal } from '@/components/shared/SubmitModal';
@@ -15,6 +15,7 @@ import { ExamResultModal } from '@/components/shared/ExamResultModal';
 import { ScoringQueuedScreen } from '@/components/shared/ScoringQueuedScreen';
 import { DictionaryOverlay, useDictionaryOverlay } from '@/components/shared/DictionaryOverlay';
 import { PartSectionHeader } from '@/components/shared/PartSectionHeader';
+import { useAudioSync } from './useAudioSync';
 import { FontAwesome } from '@expo/vector-icons';
 import { submitAnswers, saveDraft } from '@/lib/api/progress';
 
@@ -29,10 +30,11 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
   const showDict = useDictionaryOverlay((s) => s.show);
   const {
     initLesson, setAnswer, setSubmitting, setCompleted,
-    answers, groups, setCurrentGroup,
-    isSubmitting, isCompleted, results, score,
-    lessonId, lessonTitle, getAllQuestions, resetForRetake,
+    answers, getAllQuestions, setCurrentGroup,
+    isSubmitting, isCompleted, results, score, rewardCoins,
+    lessonId, lessonTitle, resetForRetake,
   } = useTestStore();
+  const { refreshUser } = useAuthStore();
 
   const [showAnswerSheet, setShowAnswerSheet] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -44,7 +46,7 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
   const autoSubmittedRef = useRef(false);
 
   useEffect(() => {
-    if (!lesson?.id) return;
+    if (!lesson || !lesson.id) return;
     initLesson(lesson.id, lesson.title, lesson.passages || [], groupedQuestions, timeLimitMinutes);
     autoSubmittedRef.current = false;
   }, [lesson?.id]);
@@ -103,23 +105,23 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
         return;
       }
 
-      setCompleted(res.results || [], res.score || 0);
+      setCompleted(res.results || [], res.score || 0, undefined, (res as any).coins_awarded);
+      refreshUser();
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to submit answers.');
       setSubmitting(false);
     }
   }, [lessonId, answers, isSubmitting]);
 
-  // Auto-submit khi hết giờ
   const handleTimeUp = useCallback(() => {
     if (autoSubmittedRef.current) return;
     autoSubmittedRef.current = true;
     handleSubmit();
   }, [handleSubmit]);
 
-  const handleJumpTo = useCallback(() => {
+  const handleJumpTo = useCallback((qNum: number) => {
     setShowAnswerSheet(false);
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    // Logic cuộn đến câu hỏi cụ thể...
   }, []);
 
   const handleRetake = useCallback(async () => {
@@ -133,91 +135,54 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
     autoSubmittedRef.current = false;
   }, [lessonId, timeLimitMinutes, resetForRetake]);
 
-  // --- Mixed-part grouped rendering ---
-  // Each IELTS Listening part has its own audio source (passage with audio_url).
-  // We render an AudioController per part that has audio, then its question groups.
   const renderPartSections = useCallback(() => {
     const allPassages = lesson.passages ?? [];
-    const allGroups = groups;
+    const allGroups = useTestStore.getState().groups;
     const partsToRender = lesson.lesson_parts;
 
-    // No explicit part config → legacy flat render
     if (!partsToRender || partsToRender.length === 0) {
-      const legacyPassageWithAudio = allPassages.find((p) => p.audio_url);
-      let offset = 0;
       return (
         <>
-          {legacyPassageWithAudio && (
-            <AudioController
-              audioUrl={legacyPassageWithAudio.audio_url!}
-              onTimeUpdate={handleTimeUpdate}
-            />
-          )}
-          {allGroups.reduce<{ offset: number; elements: React.ReactNode[] }>(
-            (acc, g) => {
-              const startIndex = acc.offset;
-              acc.elements.push(
-                <View key={g.group.id}>
-                  <ListeningGroupRenderer
-                    group={g.group}
-                    questions={g.questions}
-                    answers={answers}
-                    onAnswer={handleAnswer}
-                    activeQuestionNumber={activeQuestionNumber}
-                    startIndex={startIndex}
-                  />
-                </View>
-              );
-              acc.offset += g.questions.length;
-              return acc;
-            },
-            { offset: 0, elements: [] }
-          ).elements}
-        </>
-      );
-    }
-
-    // Grouped render — track global question offset for correct numbering
-    let globalOffset = 0;
-    return partsToRender.map((partNum) => {
-      const partPassages = allPassages.filter((p) => (p.part ?? 1) === partNum);
-      const partGroups = allGroups.filter((g) => (g.group.part ?? 1) === partNum);
-      const partAudio = partPassages.find((p) => p.audio_url);
-      const partTitle = partPassages[0]?.title ?? null;
-
-      const elements = partGroups.map((g) => {
-        const startIndex = globalOffset;
-        globalOffset += g.questions.length;
-        return (
-          <View key={g.group.id}>
+          <AudioController audioUrl={allPassages[0]?.audio_url || ''} onTimeUpdate={handleTimeUpdate} />
+          {allGroups.map((g) => (
             <ListeningGroupRenderer
+              key={g.group.id}
               group={g.group}
               questions={g.questions}
               answers={answers}
               onAnswer={handleAnswer}
               activeQuestionNumber={activeQuestionNumber}
-              startIndex={startIndex}
             />
-          </View>
-        );
-      });
+          ))}
+        </>
+      );
+    }
+
+    return partsToRender.map((partNum) => {
+      const partPassages = allPassages.filter((p) => (p.part ?? 1) === partNum);
+      const partGroups = allGroups.filter((g) => (g.group.part ?? 1) === partNum);
+      const partTitle = partPassages[0]?.title ?? null;
 
       return (
         <View key={partNum}>
           <PartSectionHeader partNumber={partNum} title={partTitle} />
-          {partAudio && (
-            <AudioController
-              audioUrl={partAudio.audio_url!}
-              onTimeUpdate={handleTimeUpdate}
+          <AudioController audioUrl={partPassages[0]?.audio_url || ''} onTimeUpdate={handleTimeUpdate} />
+          {partGroups.map((g) => (
+            <ListeningGroupRenderer
+              key={g.group.id}
+              group={g.group}
+              questions={g.questions}
+              answers={answers}
+              onAnswer={handleAnswer}
+              activeQuestionNumber={activeQuestionNumber}
             />
-          )}
-          {elements}
+          ))}
         </View>
       );
     });
-  }, [lesson.passages, lesson.lesson_parts, groups, answers, handleAnswer, activeQuestionNumber, handleTimeUpdate]);
+  }, [lesson.passages, lesson.lesson_parts, answers, handleAnswer, handleTimeUpdate, activeQuestionNumber]);
 
-  if (!lesson?.id) {
+  if (!lesson || !lesson.id) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -225,7 +190,6 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
     );
   }
 
-  // Free user: hiện màn hình thông báo deferred
   if (isCompleted && isDeferred && deferredInfo) {
     return (
       <ScoringQueuedScreen
@@ -272,14 +236,13 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
           <FontAwesome name="th-large" size={16} color={colors.primary} />
           <Text style={styles.answerSheetText}>{answeredCount}/{totalQuestions}</Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.submitBtn}
           onPress={() => setShowSubmitModal(true)}
           disabled={isSubmitting}
         >
-          {isSubmitting
-            ? <ActivityIndicator size="small" color="#fff" />
-            : <Text style={styles.submitText}>Submit</Text>}
+          {isSubmitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.submitText}>Submit</Text>}
         </TouchableOpacity>
       </View>
 
@@ -289,11 +252,7 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
         </View>
       )}
 
-      <SubmitModal
-        visible={showSubmitModal}
-        onClose={() => setShowSubmitModal(false)}
-        onConfirm={handleSubmit}
-      />
+      <SubmitModal visible={showSubmitModal} onClose={() => setShowSubmitModal(false)} onConfirm={handleSubmit} />
 
       <ExamResultModal
         visible={showResultModal}
@@ -302,10 +261,9 @@ export function ListeningScreen({ lesson, groupedQuestions, timeLimitMinutes = 4
         score={score ?? 0}
         totalQuestions={totalQuestions}
         results={results ?? []}
+        rewardCoins={rewardCoins}
         onDone={() => { setShowResultModal(false); router.back(); }}
       />
-
-      {/* Dictionary overlay — tra từ nhanh trong bài nghe */}
       <DictionaryOverlay />
     </View>
   );
@@ -329,7 +287,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   scrollArea: { flex: 1 },
-  scrollContent: { padding: spacing.lg, paddingBottom: 100 },
+  scrollContent: { padding: spacing.lg, paddingBottom: 100, gap: spacing.lg },
   bottomBar: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
@@ -346,5 +304,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md, backgroundColor: colors.primary,
   },
   submitText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  answerSheetOverlay: { position: 'absolute', bottom: 64, left: spacing.md, right: spacing.md },
+  answerSheetOverlay: {
+    position: 'absolute', bottom: 64, left: spacing.md, right: spacing.md,
+  },
 });

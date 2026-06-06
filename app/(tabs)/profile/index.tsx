@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   logoutText: { fontSize: 16, fontWeight: '600', color: colors.error },
 
   shopQuickRow: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.md, marginTop: spacing.sm },
-  shopCard: { flex: 1, padding: spacing.md, borderRadius: radius.lg, alignItems: 'center', gap: 8, ...shadow.sm },
+  shopCard: { flex: 1, padding: spacing.md, borderRadius: radius.lg, alignItems: 'center', gap: 8, ...shadow.card },
   shopIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   shopCardText: { fontSize: 14, fontWeight: '700', color: colors.text },
 

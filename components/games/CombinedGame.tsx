@@ -15,7 +15,7 @@ type Phase = 'intro' | 'flashcard' | 'quiz' | 'typing' | 'done';
 
 interface CombinedGameProps {
   words: ContextWord[];
-  onFinish: () => void;
+  onFinish: (coins: number) => void;
 }
 
 const PHASES: Phase[] = ['flashcard', 'quiz', 'typing'];
@@ -42,7 +42,7 @@ export function CombinedGame({ words, onFinish }: CombinedGameProps) {
 
   const currentPhase = PHASES[phaseIndex] ?? 'done';
 
-  const handlePhaseFinish = () => {
+  const handlePhaseFinish = (coins?: number) => {
     if (phaseIndex + 1 >= PHASES.length) {
       setPhaseIndex(PHASES.length); // done
     } else {
@@ -52,12 +52,13 @@ export function CombinedGame({ words, onFinish }: CombinedGameProps) {
 
   // Done
   if (phaseIndex >= PHASES.length) {
+    const coins = words.length * 12;
     return (
       <GameResult
         correct={Math.round(words.length * 0.8)} // Tổng hợp — đây là estimate
         total={words.length}
-        xp={words.length * 15}
-        onDone={onFinish}
+        coins={coins}
+        onDone={() => onFinish(coins)}
         onRetry={() => setPhaseIndex(0)}
       />
     );
