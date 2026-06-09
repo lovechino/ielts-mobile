@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { zustandStorage } from '@/lib/storage';
 
 interface WritingStore {
   drafts: Record<string, string>;
@@ -8,6 +9,7 @@ interface WritingStore {
   autoSave: (taskId: string, text: string) => void;
   getDraft: (taskId: string) => string;
   clearDraft: (taskId: string) => void;
+  resetStore: () => void;
 }
 
 export const useWritingStore = create<WritingStore>()(
@@ -38,7 +40,14 @@ export const useWritingStore = create<WritingStore>()(
           return { drafts: rest, wordCounts: wcRest, lastSavedAt: lsRest };
         });
       },
+
+      resetStore: () => {
+        set({ drafts: {}, wordCounts: {}, lastSavedAt: {} });
+      },
     }),
-    { name: 'ielts-writing-drafts' }
+    { 
+      name: 'ielts-writing-drafts',
+      storage: zustandStorage,
+    }
   )
 );

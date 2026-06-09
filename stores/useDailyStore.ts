@@ -16,20 +16,22 @@ interface DailyState {
   isCompleted: boolean;
   rewardClaimed: boolean;
   isLoading: boolean;
+  lastFetched: string | null; // YYYY-MM-DD
   
-  fetchDailyChallenge: () => Promise<void>;
+  fetchDailyChallenge: (force?: boolean) => Promise<void>;
   completeTask: (taskId: string) => void;
   claimReward: () => Promise<void>;
+  resetStore: () => void;
 }
 
-/** Key lưu trạng thái task theo ngày: "daily_tasks_YYYY-MM-DD" */
+/** Trả về string YYYY-MM-DD */
 function getTodayKey(): string {
-  return `daily_tasks_${new Date().toISOString().slice(0, 10)}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
-async function loadPersistedTaskStatuses(): Promise<Record<string, 'pending' | 'completed'>> {
+async function loadPersistedTaskStatuses(dateKey: string): Promise<Record<string, 'pending' | 'completed'>> {
   try {
-    const raw = await getSecureItem(getTodayKey());
+    const raw = await getSecureItem(`daily_tasks_${dateKey}`);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -38,9 +40,10 @@ async function loadPersistedTaskStatuses(): Promise<Record<string, 'pending' | '
 
 async function persistTaskStatuses(tasks: DailyTask[]): Promise<void> {
   try {
+    const dateKey = getTodayKey();
     const statuses: Record<string, 'pending' | 'completed'> = {};
     tasks.forEach(t => { statuses[t.id] = t.status; });
-    await setSecureItem(getTodayKey(), JSON.stringify(statuses));
+    await setSecureItem(`daily_tasks_${dateKey}`, JSON.stringify(statuses));
   } catch {
     // Ignore storage errors
   }
@@ -52,8 +55,16 @@ export const useDailyStore = create<DailyState>((set, get) => ({
   isCompleted: false,
   rewardClaimed: false,
   isLoading: false,
+  lastFetched: null,
 
-  fetchDailyChallenge: async () => {
+  fetchDailyChallenge: async (force = false) => {
+    const today = getTodayKey();
+    
+    // Nếu không phải force và đã load hôm nay rồi thì bỏ qua
+    if (!force && get().lastFetched === today && get().tasks.length > 0) {
+      return;
+    }
+
     set({ isLoading: true });
     try {
       const res = await api.get('/daily/today');
@@ -61,7 +72,7 @@ export const useDailyStore = create<DailyState>((set, get) => ({
         const data = res.data;
 
         // Load trạng thái đã persist từ hôm nay
-        const savedStatuses = await loadPersistedTaskStatuses();
+        const savedStatuses = await loadPersistedTaskStatuses(today);
 
         const tasks: DailyTask[] = [];
 
@@ -125,6 +136,7 @@ export const useDailyStore = create<DailyState>((set, get) => ({
           tasks,
           isCompleted: data.is_completed,
           rewardClaimed: data.reward_claimed,
+          lastFetched: today,
         });
       }
     } catch (error) {
@@ -179,5 +191,16 @@ export const useDailyStore = create<DailyState>((set, get) => ({
     } catch (error) {
       console.error('Claim rewards failed:', error);
     }
+  },
+
+  resetStore: () => {
+    set({
+      challengeId: null,
+      tasks: [],
+      isCompleted: false,
+      rewardClaimed: false,
+      isLoading: false,
+      lastFetched: null,
+    });
   }
 }));

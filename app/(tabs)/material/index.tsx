@@ -6,6 +6,7 @@ import { AppHeader } from '@/components/ui/AppHeader';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { FontAwesome } from '@expo/vector-icons';
 import { useDictionaryStore } from '@/stores/useDictionaryStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 
 const getLevelColor = (level: string) => {
@@ -22,6 +23,7 @@ const getLevelColor = (level: string) => {
 
 export default function DictionaryScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const { 
     searchQuery, 
     setSearchQuery, 
@@ -46,7 +48,11 @@ export default function DictionaryScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Từ điển & Sổ tay" />
+      <AppHeader 
+        title="Từ điển & Sổ tay" 
+        avatarUri={user?.avatar_url || undefined}
+        avatarFrame={user?.avatar_frame}
+      />
       
       <View style={styles.container}>
         {/* Search Bar */}

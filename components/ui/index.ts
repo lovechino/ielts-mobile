@@ -16,6 +16,8 @@ export { SectionHeader } from './SectionHeader';
 export { TextField } from './TextField';
 export { Screen } from './Screen';
 export { DownloadButton } from './DownloadButton';
+export { ToastContainer } from './Toast';
+export { LowBalanceModal } from './LowBalanceModal';
 export { default as DashboardWidgets } from './DashboardWidgets';
 export { CourseCard } from './CourseCard';
 export { PromoBanner } from './PromoBanner';

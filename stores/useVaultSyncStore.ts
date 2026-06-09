@@ -25,6 +25,7 @@ interface VaultSyncState {
 
   /** Tự động quyết định push hay pull dựa trên lastSyncAt */
   autoSync: () => Promise<void>;
+  resetStore: () => void;
 }
 
 export const useVaultSyncStore = create<VaultSyncState>((set, get) => ({
@@ -89,6 +90,10 @@ export const useVaultSyncStore = create<VaultSyncState>((set, get) => ({
       // Chỉ push nếu đã sync gần đây
       await get().pushSync();
     }
+  },
+
+  resetStore: () => {
+    set({ isSyncing: false, lastSyncAt: null, syncError: null });
   },
 }));
 

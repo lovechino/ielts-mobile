@@ -1,26 +1,43 @@
 import { Audio } from 'expo-av';
 
+/**
+ * Danh sách âm thanh. 
+ * Khuyên dùng: Tải file mp3 về bỏ vào thư mục mobile/assets/sounds và dùng require() 
+ * để tránh lỗi 403 (Forbidden) khi server từ chối hotlink từ App.
+ */
 export const SOUNDS = {
-  success: 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3',
-  click: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
-  error: 'https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3',
-  beep: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
+  // Thay đổi sang URL ổn định hơn hoặc dùng local assets
+  success: 'https://cdn.pixabay.com/audio/2021/08/04/audio_bb4c2f000b.mp3', 
+  click: 'https://cdn.pixabay.com/audio/2022/03/15/audio_c8b91c015b.mp3',
+  error: 'https://cdn.pixabay.com/audio/2021/08/04/audio_34f66a8779.mp3',
+  beep: 'https://cdn.pixabay.com/audio/2021/08/04/audio_34f66a8779.mp3',
 };
+
+// Map cho local assets (Nếu bạn đã tải về)
+// const LOCAL_SOUNDS = {
+//   success: require('@/assets/sounds/success.mp3'),
+//   click: require('@/assets/sounds/click.mp3'),
+//   error: require('@/assets/sounds/error.mp3'),
+//   beep: require('@/assets/sounds/beep.mp3'),
+// };
 
 export async function playSound(type: keyof typeof SOUNDS) {
   try {
+    const source = { uri: SOUNDS[type] };
+    // const source = LOCAL_SOUNDS[type]; // Dùng cái này nếu đã có file local
+
     const { sound } = await Audio.Sound.createAsync(
-      { uri: SOUNDS[type] },
-      { shouldPlay: true }
+      source,
+      { shouldPlay: true, volume: 0.5 }
     );
     
-    // Tự động giải phóng bộ nhớ sau khi chơi xong
     sound.setOnPlaybackStatusUpdate((status) => {
       if (status.isLoaded && status.didJustFinish) {
         sound.unloadAsync();
       }
     });
   } catch (error) {
-    console.warn('[Sound] Playback failed:', error);
+    // console.warn('[Sound] Playback failed:', error);
   }
 }
+

@@ -7,6 +7,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Font from 'expo-font';
 import { FontAwesome } from '@expo/vector-icons';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { ToastContainer } from '@/components/ui/Toast';
+import { LowBalanceModal } from '@/components/ui/LowBalanceModal';
 import { useDownloadStore } from '@/stores/useDownloadStore';
 import { useVaultSyncStore } from '@/stores/useVaultSyncStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -148,6 +150,8 @@ export default function RootLayout() {
             <Stack.Screen name="shop/index" options={{ title: 'Cửa hàng', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="shop/inventory" options={{ title: 'Kho đồ', animation: 'slide_from_right' }} />
           </Stack>
+          <ToastContainer />
+          <LowBalanceModal />
         </AuthGuard>
       )}
 

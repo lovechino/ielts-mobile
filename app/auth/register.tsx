@@ -98,14 +98,14 @@ export default function RegisterScreen() {
         <View style={styles.container}>
           <Animated.View entering={FadeInDown.duration(800).delay(200)} style={styles.brandSection}>
             <Animated.View style={[styles.brandIcon, logoAnimatedStyle]}>
-              <FontAwesome name="graduation-cap" size={28} color={colors.secondary} />
+              <FontAwesome name="paw" size={28} color={colors.secondary} />
             </Animated.View>
             <Text style={styles.brandName}>Talko</Text>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.duration(800).delay(400)} style={styles.headerText}>
             <Text style={styles.welcomeTitle}>Create Account</Text>
-            <Text style={styles.welcomeSub}>Start your IELTS journey today</Text>
+            <Text style={styles.welcomeSub}>Start your Talko journey today</Text>
           </Animated.View>
 
           <Animated.View entering={FadeInUp.duration(1000).delay(600)} style={styles.formCard}>

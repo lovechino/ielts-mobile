@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import { apiFetch, setAuthLogoutHandler } from '@/lib/api/client';
-import { getSecureItem, setSecureItem, deleteSecureItem, STORAGE_KEYS } from '@/lib/storage';
+import { getSecureItem, setSecureItem, deleteSecureItem, STORAGE_KEYS, zustandStorage } from '@/lib/storage';
 import type { UserDTO } from '@/lib/api/types';
 
 export type AuthStateType = 'loading' | 'authenticated' | 'unauthenticated';
@@ -20,28 +20,56 @@ interface AuthState {
   updateProfile: (data: Partial<Pick<UserDTO, 'full_name' | 'target_band' | 'ai_persona' | 'avatar_url'>>) => Promise<void>;
   refreshUser: () => Promise<void>;
 }
-
 async function getNotificationStore() {
   const { useNotificationStore } = await import('@/stores/useNotificationStore');
   return useNotificationStore.getState();
+}
+
+/** Reset toàn bộ dữ liệu cached của các store khác khi logout */
+async function resetAllOtherStores() {
+  try {
+    // Import động để tránh circular dependencies
+    const [
+      { useDailyStore },
+      { useTestStore },
+      { useSpeakingStore },
+      { useStreakStore },
+      { useWritingStore },
+      { useVaultSyncStore },
+      { useDictionaryStore },
+    ] = await Promise.all([
+      import('@/stores/useDailyStore'),
+      import('@/stores/useTestStore'),
+      import('@/stores/useSpeakingStore'),
+      import('@/stores/useStreakStore'),
+      import('@/stores/useWritingStore'),
+      import('@/stores/useVaultSyncStore'),
+      import('@/stores/useDictionaryStore'),
+    ]);
+
+    useDailyStore.getState().resetStore();
+    useTestStore.getState().resetStore();
+    useSpeakingStore.getState().resetStore();
+    useStreakStore.getState().resetStore();
+    useWritingStore.getState().resetStore();
+    useVaultSyncStore.getState().resetStore();
+    useDictionaryStore.getState().resetStore();
+  } catch (e) {
+    console.warn('[AuthStore] Failed to reset some stores:', e);
+  }
 }
 
 /**
  * Persist adapter dùng expo-secure-store.
  * Giữ user + authState qua Fast Refresh và app restart — không bắt user login lại.
  */
-const secureStorage = createJSONStorage<any>(() => ({
-  getItem: (key) => getSecureItem(key),
-  setItem: (key, value) => setSecureItem(key, value),
-  removeItem: (key) => deleteSecureItem(key),
-}));
-
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => {
       // Đăng ký logout handler cho apiFetch 401 interceptor
       setAuthLogoutHandler(async () => {
         try { (await getNotificationStore()).unregister(); } catch {}
+        await resetAllOtherStores();
         await deleteSecureItem(STORAGE_KEYS.ACCESS_TOKEN);
         await deleteSecureItem(STORAGE_KEYS.REFRESH_TOKEN);
         set({ user: null, accessToken: null, authState: 'unauthenticated' });
@@ -143,6 +171,8 @@ export const useAuthStore = create<AuthState>()(
 
         logout: async () => {
           try { (await getNotificationStore()).unregister(); } catch {}
+          await resetAllOtherStores();
+          
           const refreshToken = await getSecureItem(STORAGE_KEYS.REFRESH_TOKEN);
           if (refreshToken) {
             try {
@@ -178,7 +208,7 @@ export const useAuthStore = create<AuthState>()(
     },
     {
       name: 'auth-store',                    // key trong SecureStore
-      storage: secureStorage,
+      storage: zustandStorage,
       // Chỉ persist user + authState + hasCompletedAssessment
       // accessToken KHÔNG persist ở đây — đã lưu riêng trong SecureStore qua STORAGE_KEYS
       partialize: (state) => ({

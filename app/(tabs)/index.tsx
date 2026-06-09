@@ -41,8 +41,9 @@ export default function HomeScreen() {
   useEffect(() => {
     if (isFocused && authState === 'authenticated') {
       const now = Date.now();
-      // Chỉ load lại nếu đã quá 5 giây kể từ lần load cuối (Tránh spam khi switch tab)
-      if (now - lastLoadRef.current > 5000) {
+      // Chỉ load lại nếu đã quá 30 giây kể từ lần load cuối (Tránh spam khi switch tab)
+      // Các store (Daily, Streak) đã có cache nội bộ riêng, đây là layer bảo vệ thêm
+      if (now - lastLoadRef.current > 30000) {
         console.log('[Home] Refreshing data...');
         fetchStreak().catch(console.error);
         recordActivity().catch(console.error);
@@ -75,7 +76,7 @@ export default function HomeScreen() {
         icon: s.topic.toLowerCase().includes('ielts') ? 'graduation-cap' : 'book',
         color: s.topic.toLowerCase().includes('ielts') ? '#6C5CE7' : '#00B894',
         count: s.count,
-        learned: 0, // Cần logic đếm chi tiết sau
+        learned: s.learned || 0,
       }));
 
       // 2. Chuyển đổi userGroups (Lộ trình cá nhân)
@@ -86,11 +87,23 @@ export default function HomeScreen() {
         icon: 'user',
         color: '#E84393',
         count: g.count,
-        learned: 0,
+        learned: g.learned || 0,
         isCustom: true
       }));
 
-      setPaths([...systemPaths, ...customPaths]);
+
+      // 3. Thêm bảng IPA mặc định
+      const ipaPath: VocabPath = {
+        id: 'ipa_default',
+        title: 'Bảng phiên âm IPA',
+        subtitle: 'Căn bản phát âm',
+        icon: 'microphone',
+        color: '#FD79A8',
+        count: 44,
+        learned: 44,
+      };
+
+      setPaths([ipaPath, ...systemPaths, ...customPaths]);
     } catch (e) {
       console.error(e);
     }
@@ -109,8 +122,9 @@ export default function HomeScreen() {
   return (
     <Screen>
       <AppHeader
-        title="IELTS Hub"
-        avatarLetter={user?.full_name?.charAt(0)?.toUpperCase()}
+        title="Talko"
+        avatarUri={user?.avatar_url || undefined}
+        avatarFrame={user?.avatar_frame}
         streak={streak}
         coins={user?.coins || 0}
         onLeaderboard={() => {}}
@@ -189,7 +203,9 @@ export default function HomeScreen() {
                 key={path.id} 
                 style={[styles.pathCard, { backgroundColor: path.color + '10', borderColor: path.color + '30' }]}
                 onPress={() => {
-                  if (path.isCustom) {
+                  if (path.id === 'ipa_default') {
+                    router.push('/vocabulary/ipa-chart');
+                  } else if (path.isCustom) {
                     router.push(`/vocabulary/words?groupBy=group_name&groupValue=${encodeURIComponent(path.title)}`);
                   } else {
                     router.push(`/vocabulary/words?groupBy=topic&groupValue=${encodeURIComponent(path.title)}`);

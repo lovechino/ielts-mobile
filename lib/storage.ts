@@ -1,12 +1,11 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { createJSONStorage } from 'zustand/middleware';
 
 /**
  * Cross-platform storage:
  * - Native (Android/iOS): expo-secure-store
  * - Web: localStorage
- *
- * Không fallback về localStorage trên native — tránh ReferenceError.
  */
 
 const isWeb = Platform.OS === 'web';
@@ -45,6 +44,16 @@ export async function deleteSecureItem(key: string): Promise<void> {
     console.warn('[Storage] deleteSecureItem failed:', e);
   }
 }
+
+/**
+ * Reusable storage adapter for Zustand persist middleware.
+ * Uses SecureStore on native and localStorage on web.
+ */
+export const zustandStorage = createJSONStorage<any>(() => ({
+  getItem: (key) => getSecureItem(key),
+  setItem: (key, value) => setSecureItem(key, value),
+  removeItem: (key) => deleteSecureItem(key),
+}));
 
 export const STORAGE_KEYS = {
   ACCESS_TOKEN: 'auth_token',

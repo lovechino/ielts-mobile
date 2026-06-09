@@ -16,6 +16,7 @@ interface DictionaryState {
   addToRecent: (word: any) => void;
   clearSearch: () => void;
   loadVaultCounts: () => Promise<void>;
+  resetStore: () => void;
 }
 
 export const useDictionaryStore = create<DictionaryState>((set, get) => ({
@@ -77,4 +78,14 @@ export const useDictionaryStore = create<DictionaryState>((set, get) => ({
       console.error('Load vault counts error:', error);
     }
   },
+
+  resetStore: () => set({
+    searchQuery: '',
+    searchResults: [],
+    isLoading: false,
+    recentSearches: [],
+    selectedWord: null,
+    vaultLearningCount: 0,
+    vaultMasteredCount: 0,
+  }),
 }));

@@ -135,6 +135,8 @@ export default function PracticeScreen() {
     <Screen>
       <AppHeader
         title="Luyện tập"
+        avatarUri={user?.avatar_url || undefined}
+        avatarFrame={user?.avatar_frame}
         streak={streak}
         coins={user?.coins || 0}
         onLeaderboard={() => {}}

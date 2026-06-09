@@ -9,6 +9,7 @@ import { Screen } from '@/components/ui/Screen';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { colors, radius, spacing, shadow } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { fetchShopItems, buyItem, ShopItem } from '@/lib/api/shop';
 import { playSound } from '@/lib/sound';
 
@@ -34,6 +35,9 @@ const RARITY_COLORS = {
 export default function ShopScreen() {
   const router = useRouter();
   const { user, refreshUser } = useAuthStore();
+  const showToast = useUIStore((s) => s.showToast);
+  const showModal = useUIStore((s) => s.showModal);
+
   const [items, setItems] = useState<ShopItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCat, setSelectedCat] = useState('frame');
@@ -70,15 +74,30 @@ export default function ShopScreen() {
               const res = await buyItem(item.id);
               if (res.success) {
                 playSound('success');
-                Alert.alert('Thành công!', `Bạn đã sở hữu "${item.name}". Hãy vào kho đồ để trang bị.`);
                 refreshUser();
+                Alert.alert(
+                  'Mua thành công!',
+                  `Bạn đã sở hữu "${item.name}". Hãy vào Kho đồ để trang bị nhé!`,
+                  [
+                    { text: 'Để sau', style: 'cancel' },
+                    { text: 'Đến Kho đồ', onPress: () => router.push('/shop/inventory') }
+                  ]
+                );
               } else {
                 playSound('error');
-                Alert.alert('Lỗi', res.error || 'Giao dịch thất bại');
+                if (res.message?.includes('không đủ') || res.error?.includes('không đủ')) {
+                  showModal('lowBalance');
+                } else {
+                  showToast(res.error || 'Giao dịch thất bại', 'error');
+                }
               }
-            } catch (e) {
+            } catch (e: any) {
               playSound('error');
-              Alert.alert('Lỗi', 'Có lỗi kết nối mạng');
+              if (e.message?.includes('không đủ')) {
+                showModal('lowBalance');
+              } else {
+                showToast('Có lỗi kết nối mạng', 'error');
+              }
             } finally {
               setBuyingId(null);
             }
@@ -265,7 +284,7 @@ const styles = StyleSheet.create({
   },
   itemImage: { width: '100%', height: '100%' },
   framePreview: { width: 80, height: 80, position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  previewAvatar: { width: 60, height: 60, borderRadius: 30 },
+  previewAvatar: { width: 56, height: 56, borderRadius: 28 },
   previewFrame: { width: 80, height: 80, position: 'absolute', top: 0, left: 0 },
   
   animatedBadge: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FF4757', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, flexDirection: 'row', alignItems: 'center', gap: 2, zIndex: 10 },

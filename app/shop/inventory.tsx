@@ -42,23 +42,31 @@ export default function InventoryScreen() {
   };
 
   const handleEquip = async (item: InventoryItem) => {
-    if (item.is_equipped || item.item_type === 'booster' || item.item_type === 'protection') return;
+    if (item.item_type === 'booster' || item.item_type === 'protection') return;
     
     setEquippingId(item.inventory_id);
+    const isUnequipping = item.is_equipped;
+    
     try {
       const res = await equipItem(item.inventory_id);
       if (res.success) {
         playSound('success');
         setItems(prev => prev.map(i => {
           if (i.item_type === item.item_type) {
-            return { ...i, is_equipped: i.inventory_id === item.inventory_id };
+            // Nếu đang trang bị cái mới -> cái cũ cùng loại phải gỡ ra
+            // Nếu đang gỡ -> chỉ gỡ cái hiện tại
+            if (isUnequipping) {
+              return { ...i, is_equipped: i.inventory_id === item.inventory_id ? false : i.is_equipped };
+            } else {
+              return { ...i, is_equipped: i.inventory_id === item.inventory_id };
+            }
           }
           return i;
         }));
         refreshUser();
       } else {
         playSound('error');
-        Alert.alert('Lỗi', res.error || 'Không thể trang bị vật phẩm');
+        Alert.alert('Lỗi', res.error || 'Không thể thực hiện thao tác');
       }
     } catch (e) {
       playSound('error');
@@ -74,7 +82,9 @@ export default function InventoryScreen() {
           <FontAwesome name="chevron-left" size={18} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Kho đồ của tôi</Text>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity onPress={loadInventory} style={styles.backBtn}>
+          <FontAwesome name="refresh" size={18} color={colors.primary} />
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -123,13 +133,13 @@ export default function InventoryScreen() {
               <TouchableOpacity 
                 style={[styles.actionBtn, item.is_equipped && styles.equippedBtn]}
                 onPress={() => handleEquip(item)}
-                disabled={item.is_equipped || equippingId === item.inventory_id}
+                disabled={equippingId === item.inventory_id}
               >
                 {equippingId === item.inventory_id ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.actionBtnText}>
-                    {item.is_equipped ? 'ĐANG DÙNG' : 'TRANG BỊ'}
+                    {item.is_equipped ? 'GỠ TRANG BỊ' : 'TRANG BỊ'}
                   </Text>
                 )}
               </TouchableOpacity>

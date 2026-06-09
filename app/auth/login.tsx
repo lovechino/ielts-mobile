@@ -7,6 +7,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Screen } from '@/components/ui/Screen';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { API_BASE_URL } from '@/constants/config';
 import Animated, { 
   FadeInDown, 
@@ -17,7 +18,8 @@ import Animated, {
   withSequence, 
   withTiming,
   withDelay,
-  Easing
+  Easing,
+  interpolate,
 } from 'react-native-reanimated';
 
 const { width, height } = Dimensions.get('window');
@@ -35,13 +37,17 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
   const login = useAuthStore((s) => s.login);
   const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
+  const showToast = useUIStore((s) => s.showToast);
 
   // Animation values
   const logoScale = useSharedValue(1);
   const float1 = useSharedValue(0);
   const float2 = useSharedValue(0);
+  const shakeX = useSharedValue(0);
 
   useEffect(() => {
     // Logo breathing effect
@@ -85,6 +91,10 @@ export default function LoginScreen() {
     transform: [{ translateY: float2.value }, { translateX: float2.value * -0.3 }],
   }));
 
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeX.value }],
+  }));
+
   const [request, response, promptAsync] = Google.useAuthRequest(
     {
       webClientId: WEB_CLIENT_ID,
@@ -101,12 +111,12 @@ export default function LoginScreen() {
     if (response?.type === 'success') {
       const code = response.params?.code;
       if (!code) {
-        Alert.alert('Google Sign-In Error', 'No authorization code returned.');
+        showToast('No authorization code returned.', 'error');
         return;
       }
       handleGoogleCode(code);
     } else if (response?.type === 'error') {
-      Alert.alert('Google Sign-In Error', response.error?.message || 'An error occurred.');
+      showToast(response.error?.message || 'An error occurred.', 'error');
     }
   }, [response]);
 
@@ -116,7 +126,7 @@ export default function LoginScreen() {
       await loginWithGoogle(code, request?.redirectUri ?? '');
       router.replace('/(tabs)');
     } catch (err: any) {
-      Alert.alert('Google Sign-In Failed', err?.message || 'Could not authenticate with Google.');
+      showToast(err?.message || 'Could not authenticate with Google.', 'error');
     } finally {
       setGoogleLoading(false);
     }
@@ -130,14 +140,31 @@ export default function LoginScreen() {
     }
   };
 
+  const shake = () => {
+    shakeX.value = withSequence(
+      withTiming(-10, { duration: 50 }),
+      withTiming(10, { duration: 50 }),
+      withTiming(-10, { duration: 50 }),
+      withTiming(10, { duration: 50 }),
+      withTiming(0, { duration: 50 })
+    );
+  };
+
   const handleLogin = async () => {
-    if (!email || !password) { Alert.alert('Error', 'Please fill in all fields.'); return; }
+    if (!email || !password) { 
+      setErrorMsg('Vui lòng điền đầy đủ thông tin.');
+      shake();
+      return; 
+    }
     setLoading(true);
+    setErrorMsg(null);
     try {
       await login(email, password);
       router.replace('/(tabs)');
     } catch (err: any) {
-      Alert.alert('Login Failed', err?.message || 'Invalid credentials.');
+      shake();
+      setErrorMsg(err?.message || 'Tài khoản hoặc mật khẩu không đúng.');
+      showToast('Đăng nhập thất bại', 'error');
     } finally {
       setLoading(false);
     }
@@ -153,7 +180,7 @@ export default function LoginScreen() {
         <View style={styles.container}>
           <Animated.View entering={FadeInDown.duration(800).delay(200)} style={styles.brandSection}>
             <Animated.View style={[styles.brandIcon, logoAnimatedStyle]}>
-              <FontAwesome name="graduation-cap" size={28} color={colors.secondary} />
+              <FontAwesome name="paw" size={28} color={colors.secondary} />
             </Animated.View>
             <Text style={styles.brandName}>Talko</Text>
           </Animated.View>
@@ -163,16 +190,23 @@ export default function LoginScreen() {
             <Text style={styles.welcomeSub}>Sign in to continue learning</Text>
           </Animated.View>
 
-          <Animated.View entering={FadeInUp.duration(1000).delay(600)} style={styles.formCard}>
+          <Animated.View entering={FadeInUp.duration(1000).delay(600)} style={[styles.formCard, shakeStyle]}>
+            {errorMsg && (
+              <Animated.View entering={FadeInDown} style={styles.errorBanner}>
+                <FontAwesome name="exclamation-circle" size={14} color="#FF7675" />
+                <Text style={styles.errorBannerText}>{errorMsg}</Text>
+              </Animated.View>
+            )}
+            
             <View style={styles.inputGroup}>
               <View style={styles.inputWrap}>
                 <FontAwesome name="envelope" size={18} color={colors.outline} style={styles.inputIcon} />
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, errorMsg && styles.inputError]}
                   placeholder="Email"
                   placeholderTextColor={colors.outline}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(val) => { setEmail(val); setErrorMsg(null); }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
@@ -182,11 +216,11 @@ export default function LoginScreen() {
               <View style={styles.inputWrap}>
                 <FontAwesome name="lock" size={18} color={colors.outline} style={styles.inputIcon} />
                 <TextInput
-                  style={[styles.input, { paddingRight: 48 }]}
+                  style={[styles.input, { paddingRight: 48 }, errorMsg && styles.inputError]}
                   placeholder="Password"
                   placeholderTextColor={colors.outline}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(val) => { setPassword(val); setErrorMsg(null); }}
                   secureTextEntry={!showPassword}
                 />
                 <TouchableOpacity style={styles.visibilityBtn} onPress={() => setShowPassword(!showPassword)}>
@@ -257,6 +291,12 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     elevation: 8, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 20,
   },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: '#FFF5F5', padding: spacing.sm, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: '#FED7D7',
+  },
+  errorBannerText: { fontSize: 13, color: '#C53030', fontWeight: '500' },
   inputGroup: { gap: spacing.xs },
   inputWrap: { position: 'relative' },
   inputIcon: { position: 'absolute', left: spacing.md, top: 16, zIndex: 1 },
@@ -265,6 +305,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderWidth: 1, borderColor: colors.outlineVariant,
     borderRadius: radius.md, fontSize: 16, color: colors.text,
   },
+  inputError: { borderColor: '#FF7675', backgroundColor: '#FFF5F5' },
   visibilityBtn: { position: 'absolute', right: spacing.md, top: 14 },
   signInBtn: {
     backgroundColor: colors.secondaryContainer, paddingVertical: spacing.lg,
@@ -287,3 +328,4 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 14, color: colors.textSecondary },
   footerLink: { fontSize: 14, color: colors.primary, fontWeight: '700' },
 });
+

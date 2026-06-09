@@ -11,7 +11,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ActivityIndicator, ScrollView, Dimensions, Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Audio } from 'expo-av';
 import Animated, {
@@ -127,15 +127,16 @@ const ringStyles = StyleSheet.create({
 
 // ─── Phoneme Diff ─────────────────────────────────────────────────────────────
 
-function PhonemeDiff({ target, heard }: { target: string; heard: string }) {
-  // Align characters and highlight mismatches
-  const t = target.toLowerCase().split('');
-  const h = heard.toLowerCase().split('');
+function PhonemeDiff({ targetIpa, heardIpa }: { targetIpa: string; heardIpa: string }) {
+  // Chuẩn hóa: bỏ dấu / và các khoảng trắng dư thừa
+  const strip = (s: string) => s.replace(/[\/]/g, '').trim();
+  const t = strip(targetIpa).split('');
+  const h = strip(heardIpa).split('');
   const maxLen = Math.max(t.length, h.length);
 
   return (
     <View style={diffStyles.container}>
-      <Text style={diffStyles.label}>Bạn đã nói:</Text>
+      <Text style={diffStyles.label}>Phân tích ngữ âm (IPA):</Text>
       <View style={diffStyles.row}>
         {Array.from({ length: maxLen }).map((_, i) => {
           const tc = t[i] ?? '';
@@ -158,17 +159,17 @@ const diffStyles = StyleSheet.create({
   label: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 3 },
   charBox: {
-    minWidth: 20,
-    paddingHorizontal: 4,
-    paddingVertical: 3,
+    minWidth: 24,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     borderRadius: 4,
     backgroundColor: '#E8F5E9',
     alignItems: 'center',
   },
   charBoxWrong: { backgroundColor: '#FFEBEE' },
-  charHeard: { fontSize: 15, fontWeight: '700', color: '#2E7D32' },
+  charHeard: { fontSize: 16, fontWeight: '700', color: '#2E7D32' },
   charWrong: { color: '#C62828' },
-  charTarget: { fontSize: 9, color: '#C62828', fontWeight: '700' },
+  charTarget: { fontSize: 10, color: '#C62828', fontWeight: '700' },
 });
 
 // ─── Attempt History ──────────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ const diffStyles = StyleSheet.create({
 interface Attempt {
   accuracy: number;
   transcription: string;
+  heardIpa?: string;
   timestamp: number;
 }
 
@@ -191,7 +193,9 @@ function AttemptHistory({ attempts }: { attempts: Attempt[] }) {
           <View key={i} style={histStyles.row}>
             <View style={[histStyles.dot, { backgroundColor: color }]} />
             <Text style={histStyles.pct}>{pct}%</Text>
-            <Text style={histStyles.heard} numberOfLines={1}>"{a.transcription}"</Text>
+            <Text style={histStyles.heard} numberOfLines={1}>
+              "{a.transcription}" {a.heardIpa ? <Text style={histStyles.ipaSmall}>{a.heardIpa}</Text> : null}
+            </Text>
           </View>
         );
       })}
@@ -206,6 +210,7 @@ const histStyles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4 },
   pct: { fontSize: 13, fontWeight: '800', color: colors.text, width: 36 },
   heard: { flex: 1, fontSize: 13, color: colors.textSecondary, fontStyle: 'italic' },
+  ipaSmall: { fontSize: 11, color: colors.textMuted, fontStyle: 'normal' },
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -214,13 +219,19 @@ type Status = 'idle' | 'recording' | 'processing' | 'success' | 'fail';
 
 export default function PronunciationScreen() {
   const router = useRouter();
+  const { word: paramWord, ipa: paramIpa, meaning: paramMeaning } = useLocalSearchParams<{ word?: string; ipa?: string; meaning?: string }>();
   const { startRecording, stopRecording, isRecording, meteringValue } = useRecorder();
   const [targetWord, setTargetWord] = useState('');
   const [targetIpa, setTargetIpa] = useState('');
   const [targetMeaning, setTargetMeaning] = useState('');
   const [wordLoading, setWordLoading] = useState(true);
   const [status, setStatus] = useState<Status>('idle');
-  const [feedback, setFeedback] = useState<{ accuracy: number; transcription: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ 
+    accuracy: number; 
+    transcription: string;
+    targetIpa: string;
+    heardIpa: string;
+  } | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const completeTask = useDailyStore(s => s.completeTask);
   const { speak, isSpeaking } = useTTS();
@@ -229,12 +240,22 @@ export default function PronunciationScreen() {
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(0);
 
-  /** Lấy từ tiếp theo để luyện — ưu tiên daily task, fallback về random từ DB */
+  /** Lấy từ tiếp theo để luyện — ưu tiên params, daily task, fallback về random từ DB */
   const loadNextWord = useCallback(async () => {
     setWordLoading(true);
     setFeedback(null);
     setStatus('idle');
     setAttempts([]);
+
+    // 0. Nếu có paramWord từ router, dùng luôn (vd: từ IPA Chart sang)
+    if (paramWord) {
+      setTargetWord(paramWord);
+      setTargetIpa(paramIpa || '');
+      setTargetMeaning(paramMeaning || '');
+      setWordLoading(false);
+      setTimeout(() => speak(paramWord), 600);
+      return;
+    }
 
     // 1. Thử lấy từ daily speaking task
     const dailyStore = useDailyStore.getState();
@@ -366,6 +387,8 @@ export default function PronunciationScreen() {
         accuracy: number;
         transcription: string;
         target_text: string;
+        target_ipa: string;
+        heard_ipa: string;
         status: 'excellent' | 'good' | 'try_again';
       }>('/ai/pronunciation-check', {
         audio: base64Audio,
@@ -374,11 +397,11 @@ export default function PronunciationScreen() {
 
       console.log('[Pronounce] API Response:', res);
 
-      const { accuracy, transcription } = res;
-      setFeedback({ accuracy, transcription });
+      const { accuracy, transcription, target_ipa, heard_ipa } = res;
+      setFeedback({ accuracy, transcription, targetIpa: target_ipa, heardIpa: heard_ipa });
       setStatus(accuracy >= 0.7 ? 'success' : 'fail');
       setAttempts(prev => [
-        { accuracy, transcription, timestamp: Date.now() },
+        { accuracy, transcription, heardIpa: heard_ipa, timestamp: Date.now() },
         ...prev.slice(0, 4),
       ]);
       if (accuracy >= 0.7) completeTask('daily-speaking');
@@ -474,7 +497,7 @@ export default function PronunciationScreen() {
           <View style={styles.feedbackCard}>
             <ScoreRing accuracy={feedback.accuracy} />
             <View style={styles.feedbackRight}>
-              <PhonemeDiff target={targetWord} heard={feedback.transcription} />
+              <PhonemeDiff targetIpa={feedback.targetIpa} heardIpa={feedback.heardIpa} />
               <Text style={[
                 styles.feedbackMsg,
                 { color: feedback.accuracy >= 0.7 ? '#00B894' : '#D63031' },

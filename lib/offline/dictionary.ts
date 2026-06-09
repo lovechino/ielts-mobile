@@ -352,8 +352,8 @@ export const getAllVaultWords = async (groupName?: string) => {
 
 export const getVaultGroups = async () => {
   const database = await initDictionaryDB();
-  return await database.getAllAsync<{ group_name: string; count: number }>(
-    'SELECT group_name, COUNT(*) as count FROM user_word_vault GROUP BY group_name'
+  return await database.getAllAsync<{ group_name: string; count: number; learned: number }>(
+    "SELECT group_name, COUNT(*) as count, SUM(CASE WHEN status = 'mastered' THEN 1 ELSE 0 END) as learned FROM user_word_vault GROUP BY group_name"
   );
 };
 
@@ -593,10 +593,17 @@ export const deleteCustomWord = async (id: number) => {
 
 export const getSystemVocabStats = async () => {
   const database = await initDictionaryDB();
-  // Lấy danh sách các topic lớn và số lượng từ tương ứng
-  // Chúng ta loại trừ 'User-Added' vì đó là phần custom
-  return await database.getAllAsync<{ topic: string; count: number }>(
-    "SELECT topic, COUNT(*) as count FROM vocabulary WHERE topic != 'User-Added' AND topic IS NOT NULL GROUP BY topic HAVING count > 10"
+  // Lấy danh sách các topic lớn, số lượng từ tổng và số lượng đã thuộc
+  return await database.getAllAsync<{ topic: string; count: number; learned: number }>(
+    `SELECT 
+      v.topic, 
+      COUNT(v.id) as count,
+      COUNT(uv.vocab_id) as learned
+     FROM vocabulary v
+     LEFT JOIN user_word_vault uv ON v.id = uv.vocab_id AND uv.status = 'mastered'
+     WHERE v.topic != 'User-Added' AND v.topic IS NOT NULL 
+     GROUP BY v.topic 
+     HAVING count > 10`
   );
 };
 

@@ -14,23 +14,35 @@ import { deleteSecureItem } from '@/lib/storage';
 const PERSONAS = [
   {
     id: 'james',
-    name: 'James (British)',
+    name: 'James',
+    accent: 'British',
+    description: 'Formal & Strict',
+    color: '#3B82F6',
     avatarUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCaq08xumLSIqTJIB9UIjAET-iVNDjXij2qKvFoWYegHkFl1sEWVA0Cm7_UM_qh7zgcWzR853TDUGjAT0cBX--abiNIqHg7eEhbkUHb0HEYLehbxcI0iXQsaaECikiRkvhCxNSp1ml_slsesUjx3c2ldlAJ3ONNUDa7MyhxOuqNdma03RAUEvMr3AV9L5ntJKfpFw109Y38YO9KkFy_yFKglrt8Ztddq9xqzRRi6EwDXmcUttyJdlL180pB2V2T37y_6bShI_cml0o',
   },
   {
     id: 'emily',
-    name: 'Emily (Australian)',
+    name: 'Emily',
+    accent: 'Australian',
+    description: 'Friendly & Supportive',
+    color: '#EC4899',
     avatarUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBNYhNNKnIuYDJzNIsUzLh6eAvvYIz_0ukVVFbCnqC8-TftqD2-CGoWjN1b49V-3yY_EZ9ywvIwaO6BERxtIPpWxQu1iBol1rWGK3qbOOlYZMmtWLJQ52XhcA9zrykzt_T2Ofigvbi3eWA-Th8b5Y_jS1Yh-McHtDTQEfM25iel27cvSgdc8twXU3XTAo8vqgGiZ0emjGuRZYHFFJZOtaW5rcc8ieKKj99wCZvyLT6_MsSKX1raQOShMG97zZXDXoSkqWHv4b7PPls',
   },
   {
     id: 'dr_chen',
-    name: 'Dr. Chen (American)',
+    name: 'Dr. Chen',
+    accent: 'American',
+    description: 'Expert & Academic',
+    color: '#8B5CF6',
     avatarUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCginfzaN4mhEwYhjnJDmTLW7wUIQRdfepSim1J_hfwpCNEotoeIrZ8PyoNVADkmn5myR4v0S5B7CnddjRpaAYuPwcauki8G46gdz48PPbt9Hrl9Qa1OIYQA5KmrSdC3EVP31LbV0qkz-_EVlzT5EzxmZvNDrBoQDpyQ_30PNhPevm0fTIhKPtIPqXzjRIKiuaPkY2oxDnzzB9B8caCW5EUAmAwfcJrJlEH4vwQdQbik0E1DZPgF_eOPBHkcdkUbmIFhYOSxXomsDw',
     isPremium: true,
   },
   {
     id: 'sarah',
-    name: 'Sarah (American)',
+    name: 'Sarah',
+    accent: 'American',
+    description: 'Energetic & Fast',
+    color: '#F59E0B',
     avatarUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCUsy23WCURLBFoSepan61QgVQMj3aoICZRWCuA7P5KYFhyP7M6vK-_mOp2bayWHl5s0M-I_hqJZZRgytJqIG0GundrLWv6YuzwarQ73qeIw1wTImiju6i6H10pS3oqBN12SjJc02l_Msyq9t5x-1-dKjJa4vVz4NyE2Pc4X85DeHcXmLgzkYvjDFjJayI5JUDXDOWAE7hfq89HPWihwtMeAJKyU7xd7WSAKQjXYp-fsVR6G9hDT0wSVsqry_PJNyeZ8um1I93p2QI',
     isPremium: true,
   },
@@ -60,8 +72,8 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     router.replace('/auth/login');
   };
 
@@ -115,13 +127,13 @@ export default function ProfileScreen() {
           <View style={styles.avatarContainer}>
              <View style={styles.avatarLarge}>
                 {user?.avatar_url ? (
-                  <Image source={{ uri: user.avatar_url }} style={styles.avatarImg} />
+                  <Image source={{ uri: `${user.avatar_url}${user.avatar_url.includes('?') ? '&' : '?'}v=${Date.now()}` }} style={styles.avatarImg} />
                 ) : (
                   <Text style={styles.avatarLargeText}>{user?.full_name?.charAt(0)?.toUpperCase() || 'U'}</Text>
                 )}
              </View>
              {user?.avatar_frame && (
-               <Image source={{ uri: user.avatar_frame }} style={styles.frameImg} resizeMode="contain" />
+               <Image source={{ uri: `${user.avatar_frame}${user.avatar_frame.includes('?') ? '&' : '?'}v=${Date.now()}` }} style={styles.frameImg} resizeMode="contain" />
              )}
           </View>
           <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/shop/inventory')}>
@@ -157,8 +169,11 @@ export default function ProfileScreen() {
         </View>
         <View style={styles.personaSection}>
           <View style={styles.personaHeader}>
-            <FontAwesome name="magic" size={18} color={colors.secondary} />
-            <Text style={styles.personaTitle}>AI Examiner Persona</Text>
+            <View style={styles.personaHeaderLeft}>
+               <FontAwesome name="magic" size={16} color={colors.primary} />
+               <Text style={styles.personaTitle}>Giám khảo AI</Text>
+            </View>
+            <Text style={styles.personaSub}>Chọn phong cách chấm điểm</Text>
           </View>
           <PersonaSelector personas={PERSONAS} selectedId={selectedPersona} onSelect={setSelectedPersona} />
         </View>
@@ -198,14 +213,14 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 28, fontWeight: '700', color: colors.text },
   avatarSection: { alignItems: 'center', paddingVertical: spacing.md, position: 'relative' },
   avatarLarge: {
-    width: 96, height: 96, borderRadius: 48,
-    backgroundColor: colors.primaryFixed, alignItems: 'center', justifyContent: 'center',
+    width: 104, height: 104, borderRadius: 52,
+    backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarLargeText: { fontSize: 36, fontWeight: '700', color: colors.primary },
   avatarImg: { width: '100%', height: '100%' },
-  avatarContainer: { position: 'relative', width: 110, height: 110, alignItems: 'center', justifyContent: 'center' },
-  frameImg: { position: 'absolute', top: 0, left: 0, width: 110, height: 110, zIndex: 1 },
+  avatarContainer: { position: 'relative', width: 140, height: 140, alignItems: 'center', justifyContent: 'center' },
+  frameImg: { position: 'absolute', top: 0, left: 0, width: 140, height: 140, zIndex: 1, backgroundColor: 'transparent' },
   
   editBtn: {
     position: 'absolute', bottom: 24, right: '34%', zIndex: 2,
@@ -226,9 +241,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderWidth: 1, borderColor: colors.outlineVariant,
     borderRadius: radius.md, fontSize: 16, color: colors.text,
   },
-  personaSection: { gap: spacing.sm },
-  personaHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm },
-  personaTitle: { fontSize: 18, fontWeight: '600', color: colors.text },
+  personaSection: { gap: spacing.sm, marginHorizontal: -spacing.lg },
+  personaHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.xs 
+  },
+  personaHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  personaTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  personaSub: { fontSize: 11, color: colors.textSecondary, fontWeight: '500' },
   enrolledCard: { padding: spacing.lg },
   enrolledRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   enrolledIcon: {

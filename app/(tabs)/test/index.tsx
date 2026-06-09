@@ -13,6 +13,7 @@ import { getDashboard } from '@/lib/api/stats';
 import { getTests } from '@/lib/api/tests';
 import { fetchTestHistory, unlockResult } from '@/lib/api/progress';
 import { unlockSpeakingReport } from '@/lib/api/speaking';
+import { useAuthStore } from '@/stores/useAuthStore';
 import type { DashboardStatsDTO, LessonDTO } from '@/lib/api/types';
 import type { TestHistoryItem } from '@/lib/api/progress';
 
@@ -123,6 +124,7 @@ function HistoryCard({ item, onUnlock, onPress }: HistoryCardProps) {
 
 export default function TestScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [dashboard, setDashboard] = useState<DashboardStatsDTO | null>(null);
   const [tests, setTests] = useState<LessonDTO[]>([]);
   const [history, setHistory] = useState<TestHistoryItem[]>([]);
@@ -191,7 +193,12 @@ export default function TestScreen() {
 
   return (
     <Screen>
-      <AppHeader title="Talko" avatarLetter="U" onLeaderboard={() => {}} />
+      <AppHeader 
+        title="Talko" 
+        avatarUri={user?.avatar_url || undefined}
+        avatarFrame={user?.avatar_frame}
+        onLeaderboard={() => {}} 
+      />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.pageHeader}>
           <Text style={styles.pageLabel}>Kiểm tra</Text>
