@@ -207,6 +207,31 @@ export default function TestScreen() {
 
         <StatsGrid items={stats} />
 
+        {/* ── Daily Submission Progress (Free only) ── */}
+        {user?.tier !== 'premium' && dashboard && (
+          <View style={styles.limitBox}>
+            <View style={styles.limitHeader}>
+              <Text style={styles.limitTitle}>Lượt nộp bài hôm nay</Text>
+              <Text style={styles.limitValue}>
+                {dashboard.daily_submissions_count ?? 0} / {dashboard.daily_limit ?? 3}
+              </Text>
+            </View>
+            <View style={styles.progressBarBg}>
+              <View 
+                style={[
+                  styles.progressBarFill, 
+                  { width: `${Math.min(((dashboard.daily_submissions_count ?? 0) / (dashboard.daily_limit ?? 3)) * 100, 100)}%` }
+                ]} 
+              />
+            </View>
+            <Text style={styles.limitSub}>
+              {(dashboard.daily_submissions_count ?? 0) >= (dashboard.daily_limit ?? 3)
+                ? 'Bạn đã hết lượt nộp bài hôm nay. Quay lại vào ngày mai nhé!'
+                : `Còn lại ${ (dashboard.daily_limit ?? 3) - (dashboard.daily_submissions_count ?? 0) } lượt nộp bài.`}
+            </Text>
+          </View>
+        )}
+
         {/* ── Danh sách bài test ── */}
         {loading ? (
           <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: spacing.xl }} />
@@ -217,12 +242,24 @@ export default function TestScreen() {
                 <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Mini Tests</Text></View>
                 {miniTests.map((test) => {
                   const iconDef = ICON_MAP[(test.lesson_type || 'reading').toLowerCase()] || ICON_MAP.reading;
-                  // Use lesson_parts[0] for the initial part; fall back to legacy speaking_part
                   const firstPart = test.lesson_parts?.[0] ?? test.speaking_part ?? 1;
+                  const isDone = test.user_progress?.status === 'completed';
+
                   return (
-                    <TestListItem key={test.id} icon={iconDef.icon} iconBgColor={iconDef.bg} iconColor={iconDef.fg}
-                      title={test.title} subtitle={testTypeLabel(test)}
-                      onPress={() => router.push(`/lesson/${test.id}?type=${test.lesson_type}&part=${firstPart}&testType=${test.test_type || 'mini'}`)}
+                    <TestListItem 
+                      key={test.id} 
+                      icon={isDone ? 'check-circle' : iconDef.icon} 
+                      iconBgColor={isDone ? 'rgba(111,251,190,0.3)' : iconDef.bg} 
+                      iconColor={isDone ? colors.tertiary : iconDef.fg}
+                      title={test.title} 
+                      subtitle={isDone ? 'Hoàn thành' : testTypeLabel(test)}
+                      onPress={() => {
+                        if (isDone) {
+                          Alert.alert('Thông báo', 'Bạn đã hoàn thành bài này rồi. Mỗi bài chỉ được làm 1 lần.');
+                          return;
+                        }
+                        router.push(`/lesson/${test.id}?type=${test.lesson_type}&part=${firstPart}&testType=${test.test_type || 'mini'}`);
+                      }}
                     />
                   );
                 })}
@@ -233,12 +270,24 @@ export default function TestScreen() {
                 <View style={[styles.sectionHeader, { marginTop: spacing.md }]}><Text style={styles.sectionTitle}>Full Tests</Text></View>
                 {fullTests.map((test) => {
                   const iconDef = ICON_MAP[(test.lesson_type || 'reading').toLowerCase()] || ICON_MAP.reading;
-                  // Use lesson_parts[0] for the initial part; fall back to legacy speaking_part
                   const firstPart = test.lesson_parts?.[0] ?? test.speaking_part ?? 1;
+                  const isDone = test.user_progress?.status === 'completed';
+
                   return (
-                    <TestListItem key={test.id} icon={iconDef.icon} iconBgColor={iconDef.bg} iconColor={iconDef.fg}
-                      title={test.title} subtitle={testTypeLabel(test)}
-                      onPress={() => router.push(`/lesson/${test.id}?type=${test.lesson_type}&part=${firstPart}&testType=${test.test_type || 'mini'}`)}
+                    <TestListItem 
+                      key={test.id} 
+                      icon={isDone ? 'check-circle' : iconDef.icon} 
+                      iconBgColor={isDone ? 'rgba(111,251,190,0.3)' : iconDef.bg} 
+                      iconColor={isDone ? colors.tertiary : iconDef.fg}
+                      title={test.title} 
+                      subtitle={isDone ? 'Hoàn thành' : testTypeLabel(test)}
+                      onPress={() => {
+                        if (isDone) {
+                          Alert.alert('Thông báo', 'Bạn đã hoàn thành bài này rồi. Mỗi bài chỉ được làm 1 lần.');
+                          return;
+                        }
+                        router.push(`/lesson/${test.id}?type=${test.lesson_type}&part=${firstPart}&testType=${test.test_type || 'mini'}`);
+                      }}
                     />
                   );
                 })}
@@ -346,6 +395,47 @@ const styles = StyleSheet.create({
   emptyHistoryText: { fontSize: 15, fontWeight: '600', color: colors.textSecondary },
   emptyHistorySub: { fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingHorizontal: spacing.lg },
   historyList: { gap: spacing.sm },
+  limitBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    ...shadow.card,
+  },
+  limitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  limitTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  limitValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  progressBarBg: {
+    height: 8,
+    backgroundColor: colors.outlineVariant,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    marginBottom: spacing.xs,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+  },
+  limitSub: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
   historyCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, ...shadow.card },
   historyIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   historyInfo: { flex: 1, gap: 3 },

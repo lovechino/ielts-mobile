@@ -119,6 +119,8 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
+            // Prevent duplicate libreactnative.so from onnxruntime-react-native CMake build
+            pickFirsts += ['**/libreactnative.so', '**/libfbjni.so']
         }
     }
     androidResources {

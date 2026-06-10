@@ -14,9 +14,16 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { FontAwesome } from '@expo/vector-icons';
 import { api } from '@/lib/api/api';
 
+import { useDailyStore } from '@/stores/useDailyStore';
+
 export default function PracticeScreen() {
-  const { type } = useLocalSearchParams<{ type: 'match' | 'scramble' | 'listen_type' }>();
+  const { type, inlineWords, daily } = useLocalSearchParams<{ 
+    type: 'match' | 'scramble' | 'listen_type',
+    inlineWords?: string,
+    daily?: string 
+  }>();
   const router = useRouter();
+  const completeTask = useDailyStore(state => state.completeTask);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0); 
@@ -29,7 +36,7 @@ export default function PracticeScreen() {
     loadGameData();
     startGame(type as any);
     return () => resetGame();
-  }, [type]);
+  }, [type, inlineWords]);
 
   const syncRewards = async (finalCoins: number) => {
     try {
@@ -40,11 +47,36 @@ export default function PracticeScreen() {
     }
   };
 
+  const handleFinishGame = async () => {
+    const finalCoins = Math.floor(score / 2);
+    addRewards(finalCoins);
+    await syncRewards(finalCoins);
+    setFinished(true);
+    endGame();
+
+    if (daily === 'true') {
+      completeTask('daily-vocab');
+    }
+  };
+
   const loadGameData = async () => {
     setLoading(true);
     try {
-      const words = await getPracticeWords(type === 'match' ? 6 : 5);
-      setData(words);
+      if (inlineWords) {
+        // Use provided words (e.g. from Daily Challenge JSON)
+        const parsed = JSON.parse(inlineWords);
+        // Ensure id exists for internal tracking
+        const mapped = parsed.map((w: any, idx: number) => ({
+          ...w,
+          id: w.id || `inline-${idx}`,
+          definition_vi: w.def_vi || w.definition_vi
+        }));
+        setData(mapped);
+      } else {
+        // Fetch from local dictionary
+        const words = await getPracticeWords(type === 'match' ? 6 : 5);
+        setData(words);
+      }
     } catch (error) {
       console.error('Load game data error:', error);
       Alert.alert('Lỗi', 'Không thể tải dữ liệu trò chơi');
@@ -53,7 +85,10 @@ export default function PracticeScreen() {
     }
   };
 
-  const updateSRS = async (vocabId: number, isCorrect: boolean) => {
+  const updateSRS = async (vocabId: number | string, isCorrect: boolean) => {
+    // If it's inline words, we might not want to update SRS or handle it differently
+    if (typeof vocabId === 'string' && vocabId.startsWith('inline')) return;
+    
     const word = data.find(w => w.id === vocabId);
     if (!word) return;
 
@@ -62,18 +97,14 @@ export default function PracticeScreen() {
       word.interval || 0, 
       word.ease_factor || 2.5
     );
-    await updateVaultWord(vocabId, stats);
+    await updateVaultWord(vocabId as number, stats);
   };
 
   const handleFinishMatch = async () => {
     for (const word of data) {
       await updateSRS(word.id, true);
     }
-    const finalCoins = Math.floor(score / 2);
-    addRewards(finalCoins);
-    await syncRewards(finalCoins);
-    setFinished(true);
-    endGame();
+    await handleFinishGame();
   };
 
   const handleNextChallenge = async (isCorrect: boolean) => {
@@ -82,11 +113,7 @@ export default function PracticeScreen() {
     if (currentIndex + 1 < data.length) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      const finalCoins = Math.floor(score / 2);
-      addRewards(finalCoins);
-      await syncRewards(finalCoins);
-      setFinished(true);
-      endGame();
+      await handleFinishGame();
     }
   };
 

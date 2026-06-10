@@ -50,7 +50,18 @@ export const startSession = (body: { personaId: string; topic: string; part: num
     body: JSON.stringify(body),
   });
 
-export const submitTurn = (body: { sessionId: string; audio: string; format: string }) =>
+export interface SubmitTurnSilenceMetadata {
+  totalSilenceMs: number;
+  mildPauseCount: number;
+  significantPauseCount: number;
+}
+
+export const submitTurn = (body: {
+  sessionId: string;
+  audio: string;
+  format: string;
+  silenceMetadata?: SubmitTurnSilenceMetadata;
+}) =>
   apiFetch<ExaminerFeedback>('/speaking/session/turn', {
     method: 'POST',
     body: JSON.stringify(body),

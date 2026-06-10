@@ -29,6 +29,10 @@ export interface LessonDTO {
   passages?: PassageDTO[];
   question_groups?: QuestionGroupDTO[];
   questions?: QuestionDTO[];
+  user_progress?: {
+    status?: string;
+    score?: number;
+  } | null;
 }
 
 export interface PassageDTO {
@@ -83,10 +87,12 @@ export interface UserDTO {
   email: string;
   full_name: string;
   role: string;
+  tier?: 'free' | 'premium';
   target_band?: number | null;
   avatar_url?: string | null;
   avatar_frame?: string | null;
   ai_persona?: string | null;
+  has_completed_assessment?: boolean;
   coins?: number;
   gems?: number;
   xp?: number;
@@ -172,6 +178,8 @@ export interface DashboardStatsDTO {
   vocab_learned: number;
   overall_progress_pct: number;
   courses: CourseProgressStat[];
+  daily_limit?: number;
+  daily_submissions_count?: number;
 }
 
 export interface VocabProgressStatus {

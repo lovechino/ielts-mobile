@@ -63,7 +63,7 @@ export default function RootLayout() {
 
   const startDownload = useDownloadStore(s => s.startDownload);
   const checkUpdate = useDownloadStore(s => s.checkUpdate);
-  const autoSync = useVaultSyncStore(s => s.autoSync);
+  const pushSync = useVaultSyncStore(s => s.pushSync);
   const authState = useAuthStore(s => s.authState);
 
   // 1. Chạy Animation ngay khi component mount
@@ -117,7 +117,7 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (authState === 'authenticated') autoSync();
+    if (authState === 'authenticated') pushSync();
   }, [authState]);
 
   const splashStyle = useAnimatedStyle(() => ({

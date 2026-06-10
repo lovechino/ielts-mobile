@@ -1,7 +1,19 @@
 import { create } from 'zustand';
 import type { ExaminerFeedback, SessionReport } from '@/lib/api/speaking';
+import type { SilenceEvent } from '@/hooks/useVAD';
 
 export type SpeakingAppState = 'idle' | 'loading' | 'speaking' | 'listening' | 'processing' | 'hesitation' | 'preparing' | 'recording' | 'completed';
+
+export interface SilenceMetadata {
+  /** Danh sách các khoảng lặng đã log trong lượt nói hiện tại */
+  events: SilenceEvent[];
+  /** Tổng thời gian im lặng (ms) */
+  totalSilenceMs: number;
+  /** Số khoảng lặng nhẹ (2–4s) */
+  mildPauseCount: number;
+  /** Số khoảng lặng nặng (>4s) */
+  significantPauseCount: number;
+}
 
 interface SpeakingState {
   sessionId: string | null;
@@ -20,6 +32,8 @@ interface SpeakingState {
   fullContent: any; // Pre-loaded JSON from lesson.content
   
   prepTimeLeft: number;
+  /** Khoảng lặng trong lượt nói hiện tại — reset sau mỗi lần submit */
+  currentTurnSilence: SilenceMetadata;
   setSessionId: (id: string | null) => void;
   setCurrentPersonaId: (id: string) => void;
   setAppState: (state: SpeakingAppState) => void;
@@ -33,6 +47,10 @@ interface SpeakingState {
   setPartIndex: (index: number) => void;
   
   setPrepTimeLeft: (sec: number) => void;
+  /** Thêm một khoảng lặng vào log của lượt nói hiện tại */
+  addSilenceEvent: (event: SilenceEvent) => void;
+  /** Reset silence log — gọi sau khi submit mỗi lượt nói */
+  resetSilenceLog: () => void;
   resetStore: () => void;
 }
 
@@ -52,6 +70,12 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
   fullContent: null,
   
   prepTimeLeft: 60,
+  currentTurnSilence: {
+    events: [],
+    totalSilenceMs: 0,
+    mildPauseCount: 0,
+    significantPauseCount: 0,
+  },
 
   setSessionId: (id) => set({ sessionId: id }),
   setCurrentPersonaId: (id) => set({ currentPersonaId: id }),
@@ -71,6 +95,28 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
   setPartIndex: (index) => set({ currentPartIndex: index }),
   
   setPrepTimeLeft: (sec) => set({ prepTimeLeft: sec }),
+
+  addSilenceEvent: (event) => set((state) => {
+    const penalty = event.durationMs >= 4000 ? 'significant' : event.durationMs >= 2000 ? 'mild' : 'none';
+    return {
+      currentTurnSilence: {
+        events: [...state.currentTurnSilence.events, event],
+        totalSilenceMs: state.currentTurnSilence.totalSilenceMs + event.durationMs,
+        mildPauseCount: state.currentTurnSilence.mildPauseCount + (penalty === 'mild' ? 1 : 0),
+        significantPauseCount: state.currentTurnSilence.significantPauseCount + (penalty === 'significant' ? 1 : 0),
+      },
+    };
+  }),
+
+  resetSilenceLog: () => set({
+    currentTurnSilence: {
+      events: [],
+      totalSilenceMs: 0,
+      mildPauseCount: 0,
+      significantPauseCount: 0,
+    },
+  }),
+
   resetStore: () => set({
     sessionId: null,
     appState: 'idle',
@@ -84,5 +130,11 @@ export const useSpeakingStore = create<SpeakingState>((set) => ({
     currentPartIndex: 0,
     fullContent: null,
     prepTimeLeft: 60,
+    currentTurnSilence: {
+      events: [],
+      totalSilenceMs: 0,
+      mildPauseCount: 0,
+      significantPauseCount: 0,
+    },
   }),
 }));

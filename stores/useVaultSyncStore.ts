@@ -9,22 +9,30 @@
  */
 import { create } from 'zustand';
 import { syncVaultToServer, pullVaultFromServer } from '@/lib/api/vault';
-import { getAllVaultForSync, restoreVaultFromServer } from '@/lib/offline/dictionary';
+import { fetchMyUnlockedBundles } from '@/lib/api/vocabulary';
+import { 
+  getPendingVaultItems, 
+  markItemsAsSynced, 
+  restoreVaultFromServer,
+  addBundleToVault 
+} from '@/lib/offline/dictionary';
 import { useAuthStore } from './useAuthStore';
 
 interface VaultSyncState {
   isSyncing: boolean;
   lastSyncAt: number | null;
   syncError: string | null;
+  debounceTimer: any | null;
 
-  /** Push local vault → server. Gọi sau addToVault / updateVaultWord nếu premium. */
+  /** Push local changes → server (Batch sync). */
   pushSync: () => Promise<void>;
 
-  /** Pull server vault → local. Gọi khi app khởi động (premium) hoặc sau login. */
+  /** Pull server vault → local. */
   pullSync: () => Promise<void>;
 
-  /** Tự động quyết định push hay pull dựa trên lastSyncAt */
-  autoSync: () => Promise<void>;
+  /** Đặt lịch sync sau một khoảng thời gian (Debounce) */
+  scheduleSync: (delay?: number) => void;
+
   resetStore: () => void;
 }
 
@@ -32,19 +40,28 @@ export const useVaultSyncStore = create<VaultSyncState>((set, get) => ({
   isSyncing: false,
   lastSyncAt: null,
   syncError: null,
+  debounceTimer: null,
 
   pushSync: async () => {
-    const user = useAuthStore.getState().user;
-    if ((user as any)?.tier !== 'premium') return; // Free users skip
+    const { authState } = useAuthStore.getState();
+    if (authState !== 'authenticated') return;
 
     if (get().isSyncing) return;
-    set({ isSyncing: true, syncError: null });
-
+    
     try {
-      const localItems = await getAllVaultForSync();
-      if (localItems.length === 0) return;
+      const pendingItems = await getPendingVaultItems();
+      if (pendingItems.length === 0) return;
 
-      await syncVaultToServer(localItems);
+      set({ isSyncing: true, syncError: null });
+      console.log(`[VaultSync] Batch syncing ${pendingItems.length} items...`);
+
+      const result = await syncVaultToServer(pendingItems);
+      
+      if (result.synced > 0) {
+        const ids = pendingItems.map(item => item.vocab_id);
+        await markItemsAsSynced(ids);
+      }
+
       set({ lastSyncAt: Date.now() });
     } catch (err: any) {
       set({ syncError: err?.message || 'Sync failed' });
@@ -55,19 +72,34 @@ export const useVaultSyncStore = create<VaultSyncState>((set, get) => ({
   },
 
   pullSync: async () => {
-    const user = useAuthStore.getState().user;
-    if ((user as any)?.tier !== 'premium') return;
+    const { authState } = useAuthStore.getState();
+    if (authState !== 'authenticated') return;
 
     if (get().isSyncing) return;
     set({ isSyncing: true, syncError: null });
 
     try {
-      const serverItems = await pullVaultFromServer();
-      if (serverItems.length === 0) return;
+      console.log('[VaultSync] Pulling data from server...');
+      
+      const [serverItems, unlockedBundles] = await Promise.all([
+        pullVaultFromServer(),
+        fetchMyUnlockedBundles().catch(() => [] as string[])
+      ]);
 
-      // Server wins: restore overwrites local
-      await restoreVaultFromServer(serverItems);
+      // 1. Restore individual words
+      if (serverItems.length > 0) {
+        await restoreVaultFromServer(serverItems);
+      }
+
+      // 2. Restore bundles (re-nạp từ nếu local chưa có)
+      if (unlockedBundles.length > 0) {
+        for (const bundleId of unlockedBundles) {
+          await addBundleToVault(bundleId, 'Roadmap').catch(console.error);
+        }
+      }
+
       set({ lastSyncAt: Date.now() });
+      console.log('[VaultSync] Pull completed successfully.');
     } catch (err: any) {
       set({ syncError: err?.message || 'Pull failed' });
       console.warn('[VaultSync] Pull failed:', err?.message);
@@ -76,31 +108,28 @@ export const useVaultSyncStore = create<VaultSyncState>((set, get) => ({
     }
   },
 
-  autoSync: async () => {
-    const user = useAuthStore.getState().user;
-    if ((user as any)?.tier !== 'premium') return;
+  scheduleSync: (delay = 5000) => {
+    const { debounceTimer } = get();
+    if (debounceTimer) clearTimeout(debounceTimer);
 
-    const { lastSyncAt } = get();
-    const now = Date.now();
+    const timer = setTimeout(() => {
+      get().pushSync();
+    }, delay);
 
-    // Pull nếu chưa sync hoặc đã > 1 giờ
-    if (!lastSyncAt || now - lastSyncAt > 60 * 60 * 1000) {
-      await get().pullSync();
-    } else {
-      // Chỉ push nếu đã sync gần đây
-      await get().pushSync();
-    }
+    set({ debounceTimer: timer });
   },
 
   resetStore: () => {
-    set({ isSyncing: false, lastSyncAt: null, syncError: null });
+    const { debounceTimer } = get();
+    if (debounceTimer) clearTimeout(debounceTimer);
+    set({ isSyncing: false, lastSyncAt: null, syncError: null, debounceTimer: null });
   },
 }));
 
 /**
- * Helper: gọi pushSync sau khi thay đổi vault.
- * Import và dùng trong addToVault / updateVaultWord wrappers.
+ * Helper: gọi triggerVaultSync sau khi thay đổi vault.
+ * Nó sẽ schedule một đợt sync sau 5s im lặng.
  */
-export async function triggerVaultSync() {
-  await useVaultSyncStore.getState().pushSync();
+export function triggerVaultSync() {
+  useVaultSyncStore.getState().scheduleSync();
 }

@@ -85,6 +85,12 @@ export const useAuthStore = create<AuthState>()(
         setAssessmentCompleted: () => {
           set({ hasCompletedAssessment: true });
           setSecureItem(STORAGE_KEYS.ASSESSMENT_COMPLETED, 'true').catch(() => {});
+          
+          // Sync với server nếu đang login
+          const { authState, updateProfile } = get();
+          if (authState === 'authenticated') {
+            updateProfile({ has_completed_assessment: true } as any).catch(console.error);
+          }
         },
 
         hydrate: async () => {
@@ -103,7 +109,21 @@ export const useAuthStore = create<AuthState>()(
             if (accessToken) {
               try {
                 const user = await apiFetch<UserDTO>('/auth/me');
-                set({ user, accessToken, authState: 'authenticated' });
+                set({ 
+                  user, 
+                  accessToken, 
+                  authState: 'authenticated',
+                  // Đồng bộ state từ server về local
+                  hasCompletedAssessment: user.has_completed_assessment || (assessmentDone === 'true')
+                });
+                if (user.has_completed_assessment) {
+                  setSecureItem(STORAGE_KEYS.ASSESSMENT_COMPLETED, 'true').catch(() => {});
+                }
+                
+                // --- Sync Vocabulary Vault ---
+                const { useVaultSyncStore } = await import('@/stores/useVaultSyncStore');
+                useVaultSyncStore.getState().pullSync().catch(console.error);
+
                 getNotificationStore().then((s) => s.register()).catch(() => {});
                 return;
               } catch {
@@ -143,7 +163,23 @@ export const useAuthStore = create<AuthState>()(
           );
           await setSecureItem(STORAGE_KEYS.ACCESS_TOKEN, res.token);
           if (res.refresh_token) await setSecureItem(STORAGE_KEYS.REFRESH_TOKEN, res.refresh_token);
-          set({ user: res.user, accessToken: res.token, authState: 'authenticated' });
+          
+          const assessmentDone = res.user.has_completed_assessment;
+          if (assessmentDone) {
+            await setSecureItem(STORAGE_KEYS.ASSESSMENT_COMPLETED, 'true');
+          }
+
+          set({ 
+            user: res.user, 
+            accessToken: res.token, 
+            authState: 'authenticated',
+            hasCompletedAssessment: !!assessmentDone 
+          });
+
+          // --- Sync Vocabulary Vault ---
+          const { useVaultSyncStore } = await import('@/stores/useVaultSyncStore');
+          useVaultSyncStore.getState().pullSync().catch(console.error);
+
           getNotificationStore().then((s) => s.register()).catch(() => {});
         },
 
@@ -154,7 +190,23 @@ export const useAuthStore = create<AuthState>()(
           );
           await setSecureItem(STORAGE_KEYS.ACCESS_TOKEN, res.access_token);
           await setSecureItem(STORAGE_KEYS.REFRESH_TOKEN, res.refresh_token);
-          set({ user: res.user, accessToken: res.access_token, authState: 'authenticated' });
+          
+          const assessmentDone = res.user.has_completed_assessment;
+          if (assessmentDone) {
+            await setSecureItem(STORAGE_KEYS.ASSESSMENT_COMPLETED, 'true');
+          }
+
+          set({ 
+            user: res.user, 
+            accessToken: res.access_token, 
+            authState: 'authenticated',
+            hasCompletedAssessment: !!assessmentDone 
+          });
+
+          // --- Sync Vocabulary Vault ---
+          const { useVaultSyncStore } = await import('@/stores/useVaultSyncStore');
+          useVaultSyncStore.getState().pullSync().catch(console.error);
+
           getNotificationStore().then((s) => s.register()).catch(() => {});
         },
 
@@ -165,7 +217,13 @@ export const useAuthStore = create<AuthState>()(
           );
           await setSecureItem(STORAGE_KEYS.ACCESS_TOKEN, res.access_token);
           await setSecureItem(STORAGE_KEYS.REFRESH_TOKEN, res.refresh_token);
-          set({ user: res.user, accessToken: res.access_token, authState: 'authenticated' });
+          
+          set({ 
+            user: res.user, 
+            accessToken: res.access_token, 
+            authState: 'authenticated',
+            hasCompletedAssessment: false 
+          });
           getNotificationStore().then((s) => s.register()).catch(() => {});
         },
 
@@ -193,7 +251,13 @@ export const useAuthStore = create<AuthState>()(
             method: 'PATCH',
             body: JSON.stringify(data),
           });
-          set((state) => ({ user: state.user ? { ...state.user, ...updated } : updated }));
+          set((state) => ({ 
+            user: state.user ? { ...state.user, ...updated } : updated,
+            hasCompletedAssessment: updated.has_completed_assessment ?? state.hasCompletedAssessment
+          }));
+          if (updated.has_completed_assessment) {
+            setSecureItem(STORAGE_KEYS.ASSESSMENT_COMPLETED, 'true').catch(() => {});
+          }
         },
 
         refreshUser: async () => {

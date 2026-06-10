@@ -27,6 +27,10 @@ import * as FileSystem from 'expo-file-system';
 import { useDailyStore } from '@/stores/useDailyStore';
 import { getRandomWords } from '@/lib/offline/dictionary';
 import { useTTS } from '@/hooks/useTTS';
+import { AssetManager, AssetStatus } from '@/lib/offline/assetManager';
+import { AIModelManager } from '@/components/vocabulary/AIModelManager';
+import { AIInference } from '@/lib/offline/aiInference';
+import { PhonemeScorer } from '@/lib/offline/phonemeScorer';
 
 const { width } = Dimensions.get('window');
 const BAR_COUNT = 28;
@@ -235,20 +239,26 @@ export default function PronunciationScreen() {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const completeTask = useDailyStore(s => s.completeTask);
   const { speak, isSpeaking } = useTTS();
+  // Chỉ dùng paramWord / daily task ở lần load đầu tiên
+  // Khi user bấm "Từ khác" thì isFirstLoad = false → random từ DB
+  const isFirstLoadRef = useRef(true);
 
   // Pulse animation for record button
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(0);
 
-  /** Lấy từ tiếp theo để luyện — ưu tiên params, daily task, fallback về random từ DB */
+  /** Lấy từ tiếp theo để luyện — random từ DB, bỏ qua daily/param */
   const loadNextWord = useCallback(async () => {
     setWordLoading(true);
     setFeedback(null);
     setStatus('idle');
     setAttempts([]);
 
-    // 0. Nếu có paramWord từ router, dùng luôn (vd: từ IPA Chart sang)
-    if (paramWord) {
+    const firstLoad = isFirstLoadRef.current;
+    isFirstLoadRef.current = false;
+
+    // Lần đầu vào: nếu có paramWord từ router (vd: từ IPA Chart)
+    if (firstLoad && paramWord) {
       setTargetWord(paramWord);
       setTargetIpa(paramIpa || '');
       setTargetMeaning(paramMeaning || '');
@@ -257,34 +267,17 @@ export default function PronunciationScreen() {
       return;
     }
 
-    // 1. Thử lấy từ daily speaking task
-    const dailyStore = useDailyStore.getState();
-    const speakingTask = dailyStore.tasks.find(t => t.type === 'speaking');
-    if (speakingTask) {
-      const word = speakingTask.title.split(': ')[1];
-      if (word) {
-        setTargetWord(word);
-        setTargetIpa('');
-        setTargetMeaning('');
-        setWordLoading(false);
-        return;
-      }
-    }
-
-    // 2. Fallback: random từ từ offline DB
+    // Random từ DB
     try {
       const words = await getRandomWords(20);
-      // Lọc từ có độ dài hợp lý (4-12 ký tự) để phát âm có ý nghĩa
       const suitable = words.filter(w => w.word && w.word.length >= 4 && w.word.length <= 12);
       const pick = suitable[Math.floor(Math.random() * suitable.length)] ?? words[0];
       if (pick) {
         setTargetWord(pick.word);
         setTargetIpa(pick.pronunciation || '');
         setTargetMeaning(pick.definition_vi || pick.definition || '');
-        // Auto-play TTS để user nghe cách đọc chuẩn
         setTimeout(() => speak(pick.word), 600);
       } else {
-        // DB rỗng → dùng default list
         const defaults = ['beautiful', 'important', 'together', 'because', 'different', 'understand'];
         const picked = defaults[Math.floor(Math.random() * defaults.length)];
         setTargetWord(picked);
@@ -379,11 +372,19 @@ export default function PronunciationScreen() {
   const processAudio = async (uri: string) => {
     console.log('[Pronounce] Processing audio:', uri);
     try {
-      const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      console.log('[Pronounce] Audio converted to base64, length:', base64Audio.length);
+      const status = await AssetManager.getStatus('whisper-tiny-en');
+      let res;
 
-      // apiFetch tự động unwrap { success, data } → res là data trực tiếp
-      const res = await api.post<{
+      if (status.isDownloaded) {
+        console.log('[Pronounce] Using Offline AI...');
+        const transcript = await AIInference.runWhisper(uri);
+        // Fallback or combine with offline scoring logic later
+        // For now, let's still call API but mark as "Offline Processed" in logs
+        console.log('[Pronounce] Offline transcript:', transcript);
+      }
+
+      const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      res = await api.post<{
         accuracy: number;
         transcription: string;
         target_text: string;
@@ -428,7 +429,7 @@ export default function PronunciationScreen() {
           <FontAwesome name="chevron-left" size={20} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Luyện phát âm AI</Text>
-        <View style={{ width: 40 }} />
+        <AIModelManager modelId="whisper-tiny-en" />
       </View>
 
       <ScrollView

@@ -25,3 +25,16 @@ export function updateVocabProgress(vocabId: string, status: VocabProgressStatus
     body: JSON.stringify(status),
   });
 }
+
+/** Lưu bundle_id đã mở khóa lên server */
+export function unlockVocabularyBundle(bundleId: string): Promise<any> {
+  return apiFetch('/vocabulary/bundles/unlock', {
+    method: 'POST',
+    body: JSON.stringify({ bundle_id: bundleId }),
+  });
+}
+
+/** Lấy danh sách bundle_id đã mở khóa từ server */
+export function fetchMyUnlockedBundles(): Promise<string[]> {
+  return apiFetch<string[]>('/vocabulary/bundles/my');
+}

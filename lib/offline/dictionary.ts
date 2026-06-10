@@ -131,10 +131,23 @@ export const initDictionaryDB = async (): Promise<SQLite.SQLiteDatabase> => {
         next_review_at INTEGER,
         ease_factor REAL DEFAULT 2.5,
         interval INTEGER DEFAULT 0,
+        sync_status TEXT DEFAULT 'synced',
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at INTEGER DEFAULT (strftime('%s', 'now'))
       );
     `);
+
+    // Migration: Đảm bảo sync_status tồn tại
+    try {
+      const info: any[] = await db.getAllAsync(`PRAGMA table_info(user_word_vault)`);
+      if (!info.some((c: any) => c.name === 'sync_status')) {
+        console.log('[Dictionary] Adding sync_status to user_word_vault');
+        await db.execAsync(`ALTER TABLE user_word_vault ADD COLUMN sync_status TEXT DEFAULT 'synced';`);
+      }
+    } catch (e) {
+      console.warn('[Dictionary] user_word_vault migration failed:', e);
+    }
+
     console.log('[Dictionary] user_word_vault table ready');
 
     return db;
@@ -254,13 +267,16 @@ export const addToVault = async (vocabId: number, groupName = 'General') => {
   const database = await initDictionaryDB();
   const id = Crypto.randomUUID();
   await database.runAsync(
-    'INSERT OR IGNORE INTO user_word_vault (id, vocab_id, status, group_name) VALUES (?, ?, ?, ?)',
-    [id, vocabId, 'new', groupName]
+    'INSERT OR IGNORE INTO user_word_vault (id, vocab_id, status, group_name, sync_status) VALUES (?, ?, ?, ?, ?)',
+    [id, vocabId, 'new', groupName, 'pending']
   );
 };
 
 export const removeFromVault = async (vocabId: number) => {
   const database = await initDictionaryDB();
+  // We don't delete immediately if we want to sync the deletion, 
+  // but for simplicity, let's just delete and let the next sync handle the "full pull" or handle it as a specific case.
+  // Actually, usually deletions are synced too. For now, let's keep it simple: delete locally.
   await database.runAsync('DELETE FROM user_word_vault WHERE vocab_id = ?', [vocabId]);
 };
 
@@ -268,7 +284,7 @@ export const updateVaultWord = async (vocabId: number, stats: { interval: number
   const database = await initDictionaryDB();
   await database.runAsync(
     `UPDATE user_word_vault 
-     SET interval = ?, ease_factor = ?, next_review_at = ?, status = ?, updated_at = (strftime('%s', 'now'))
+     SET interval = ?, ease_factor = ?, next_review_at = ?, status = ?, sync_status = 'pending', updated_at = (strftime('%s', 'now'))
      WHERE vocab_id = ?`,
     [stats.interval, stats.ease_factor, stats.next_review_at, stats.status, vocabId]
   );
@@ -636,13 +652,74 @@ export const toggleMasteredStatus = async (vocabId: number) => {
   return newStatus;
 };
 
+/** Lấy danh sách các từ đang chờ đồng bộ (sync_status = 'pending') */
+export const getPendingVaultItems = async () => {
+  const database = await initDictionaryDB();
+  return await database.getAllAsync<{
+    vocab_id: number;
+    status: string;
+    group_name: string;
+    ease_factor: number;
+    interval: number;
+    next_review_at: number | null;
+    updated_at: number | null;
+  }>(
+    "SELECT vocab_id, status, group_name, ease_factor, interval, next_review_at, updated_at FROM user_word_vault WHERE sync_status = 'pending'"
+  );
+};
+
+/** Đánh dấu danh sách các từ đã đồng bộ thành công */
+export const markItemsAsSynced = async (vocabIds: number[]) => {
+  const database = await initDictionaryDB();
+  if (vocabIds.length === 0) return;
+  
+  const placeholders = vocabIds.map(() => '?').join(',');
+  await database.runAsync(
+    `UPDATE user_word_vault SET sync_status = 'synced' WHERE vocab_id IN (${placeholders})`,
+    vocabIds as any[]
+  );
+};
+
 export const addBundleToVault = async (bundleId: string, groupName: string) => {
   const database = await initDictionaryDB();
-  // Simplified: Get random words based on bundle criteria
-  // In real app, this would use specific word IDs linked to the bundle
-  const words = await getRandomWords(50); // Just for demo
+  let words: any[] = [];
+
+  // Map bundle ID to specific query criteria
+  switch (bundleId) {
+    case 'ielts_core':
+      // Lấy từ vựng B2, ưu tiên academic
+      words = await database.getAllAsync(
+        'SELECT id FROM vocabulary WHERE level = ? ORDER BY is_academic DESC, RANDOM() LIMIT 200',
+        ['B2']
+      );
+      break;
+    case 'academic_writing':
+      // Lấy từ vựng C1 + Academic
+      words = await database.getAllAsync(
+        'SELECT id FROM vocabulary WHERE (level = ? OR level = ?) AND is_academic = 1 ORDER BY RANDOM() LIMIT 150',
+        ['C1', 'B2']
+      );
+      break;
+    case 'daily_essential':
+      // Lấy từ vựng A2 nền tảng
+      words = await database.getAllAsync(
+        'SELECT id FROM vocabulary WHERE level = ? OR level = ? ORDER BY level ASC, RANDOM() LIMIT 300',
+        ['A1', 'A2']
+      );
+      break;
+    case 'business_english':
+      // Lấy từ vựng Business/Work
+      words = await database.getAllAsync(
+        "SELECT id FROM vocabulary WHERE topic = 'Business' OR topic = 'Work' ORDER BY RANDOM() LIMIT 150"
+      );
+      break;
+    default:
+      words = await getRandomWords(50);
+  }
   
-  for (const word of words) {
-    await addToVault(word.id, groupName);
+  if (words.length > 0) {
+    for (const word of words) {
+      await addToVault(word.id, groupName);
+    }
   }
 };

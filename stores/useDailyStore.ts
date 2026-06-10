@@ -67,78 +67,92 @@ export const useDailyStore = create<DailyState>((set, get) => ({
 
     set({ isLoading: true });
     try {
-      const res = await api.get('/daily/today');
-      if (res.success) {
-        const data = res.data;
+      // apiFetch đã unwrap json.data — response IS the data directly
+      const data = await api.get('/daily/today');
 
-        // Load trạng thái đã persist từ hôm nay
-        const savedStatuses = await loadPersistedTaskStatuses(today);
+      // Load trạng thái đã persist từ hôm nay
+      const savedStatuses = await loadPersistedTaskStatuses(today);
 
-        const tasks: DailyTask[] = [];
+      const tasks: DailyTask[] = [];
 
-        // Map vocab tasks
-        if (data.tasks.vocab_ids) {
-          tasks.push({
-            id: 'daily-vocab',
-            type: 'vocab',
-            title: 'Học 5 từ vựng mới',
-            status: savedStatuses['daily-vocab'] ?? 'pending',
-            link: '/vocabulary/daily',
-          });
-        }
+      // Challenge mới dùng field `content` (structured JSON)
+      // Challenge cũ dùng field `tasks` (vocab_ids, reading_id, ...)
+      const content = data.content;
+      const legacyTasks = data.tasks;
 
-        // Map SRS tasks
-        if (data.personalized.review_vocab_ids.length > 0) {
-          tasks.push({
-            id: 'review-vocab',
-            type: 'review',
-            title: `Ôn tập ${data.personalized.review_vocab_ids.length} từ cũ`,
-            status: savedStatuses['review-vocab'] ?? 'pending',
-            link: '/vocabulary/review',
-          });
-        }
-
-        // Map Reading
-        if (data.tasks.reading_id) {
-          tasks.push({
-            id: 'daily-reading',
-            type: 'reading',
-            title: 'Luyện Reading mini',
-            status: savedStatuses['daily-reading'] ?? 'pending',
-            link: `/lesson/${data.tasks.reading_id}?type=reading`,
-          });
-        }
-
-        // Map Listening
-        if (data.tasks.listening_id) {
-          tasks.push({
-            id: 'daily-listening',
-            type: 'listening',
-            title: 'Luyện Listening mini',
-            status: savedStatuses['daily-listening'] ?? 'pending',
-            link: `/lesson/${data.tasks.listening_id}?type=listening`,
-          });
-        }
-
-        // Map Pronunciation
-        if (data.tasks.pronunciation_word) {
-          tasks.push({
-            id: 'daily-speaking',
-            type: 'speaking',
-            title: `Phát âm: ${data.tasks.pronunciation_word}`,
-            status: savedStatuses['daily-speaking'] ?? 'pending',
-            link: '/vocabulary/pronounce',
-          });
-        }
-
-        set({
-          challengeId: data.id,
-          tasks,
-          isCompleted: data.is_completed,
-          rewardClaimed: data.reward_claimed,
-          lastFetched: today,
+      // ── Vocab ────────────────────────────────────────────────────────────────
+      const hasVocab = content?.vocabulary?.length > 0 || legacyTasks?.vocab_ids?.length > 0;
+      if (hasVocab) {
+        tasks.push({
+          id: 'daily-vocab',
+          type: 'vocab',
+          title: `Học ${content?.vocabulary?.length ?? 5} từ vựng mới`,
+          status: savedStatuses['daily-vocab'] ?? 'pending',
+          link: '/vocabulary/daily',
         });
       }
+
+      // ── SRS review ───────────────────────────────────────────────────────────
+      if (data.personalized?.review_vocab_ids?.length > 0) {
+        tasks.push({
+          id: 'review-vocab',
+          type: 'review',
+          title: `Ôn tập ${data.personalized.review_vocab_ids.length} từ cũ`,
+          status: savedStatuses['review-vocab'] ?? 'pending',
+          link: '/vocabulary/review',
+        });
+      }
+
+      // ── Reading ──────────────────────────────────────────────────────────────
+      const hasReading = content?.reading?.title || legacyTasks?.reading_id;
+      if (hasReading) {
+        const readingLink = legacyTasks?.reading_id
+          ? `/lesson/${legacyTasks.reading_id}?type=reading`
+          : '/daily/reading';
+        tasks.push({
+          id: 'daily-reading',
+          type: 'reading',
+          title: content?.reading?.title ? `Reading: ${content.reading.title}` : 'Luyện Reading mini',
+          status: savedStatuses['daily-reading'] ?? 'pending',
+          link: readingLink,
+        });
+      }
+
+      // ── Listening ────────────────────────────────────────────────────────────
+      const hasListening = content?.listening?.transcript || legacyTasks?.listening_id;
+      if (hasListening) {
+        const listeningLink = legacyTasks?.listening_id
+          ? `/lesson/${legacyTasks.listening_id}?type=listening`
+          : '/daily/listening';
+        tasks.push({
+          id: 'daily-listening',
+          type: 'listening',
+          title: 'Luyện Listening mini',
+          status: savedStatuses['daily-listening'] ?? 'pending',
+          link: listeningLink,
+        });
+      }
+
+      // ── Speaking / Pronunciation ─────────────────────────────────────────────
+      const pronWord = legacyTasks?.pronunciation_word
+        || content?.vocabulary?.[0]?.word;
+      if (pronWord) {
+        tasks.push({
+          id: 'daily-speaking',
+          type: 'speaking',
+          title: `Phát âm: ${pronWord}`,
+          status: savedStatuses['daily-speaking'] ?? 'pending',
+          link: '/daily/pronounce',
+        });
+      }
+
+      set({
+        challengeId: data.id,
+        tasks,
+        isCompleted: data.is_completed,
+        rewardClaimed: data.reward_claimed,
+        lastFetched: today,
+      });
     } catch (error) {
       console.error('Fetch daily challenge failed:', error);
     } finally {
@@ -184,10 +198,8 @@ export const useDailyStore = create<DailyState>((set, get) => ({
       return;
     }
     try {
-      const res = await api.post('/daily/claim', { challenge_id: challengeId });
-      if (res.success) {
-        set({ rewardClaimed: true });
-      }
+      await api.post('/daily/claim', { challenge_id: challengeId });
+      set({ rewardClaimed: true });
     } catch (error) {
       console.error('Claim rewards failed:', error);
     }

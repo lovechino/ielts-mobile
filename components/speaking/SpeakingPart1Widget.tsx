@@ -7,8 +7,10 @@ import { useSpeakingStore } from '@/stores/useSpeakingStore';
 import { useRecorder } from '@/hooks/useRecorder';
 import { useTTS } from '@/hooks/useTTS';
 import { useVAD } from '@/hooks/useVAD';
+import { useSTT } from '@/hooks/useSTT';
 import { submitTurn } from '@/lib/api/speaking';
 import { SpeakingTimer } from './SpeakingTimer';
+import { AIModelManager } from '../vocabulary/AIModelManager';
 
 const PART_DURATIONS: Record<number, number> = { 1: 300, 3: 300 };
 
@@ -207,7 +209,8 @@ async function readAudioFileBase64(uri: string): Promise<string> {
 export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: SpeakingPart1WidgetProps) {
   const { speak, stop: stopTTS } = useTTS();
   const { startRecording, stopRecording, meteringValue, isRecording } = useRecorder();
-  const { sessionId, currentPersonaId, appState, setAppState, lastFeedback, setFeedback, addTurn, prefilledTopic, lessonParts, currentPartIndex, setPartIndex, fullContent } = useSpeakingStore();
+  const { partialText, startSTT, stopSTT, resetSTT, mode } = useSTT();
+  const { sessionId, currentPersonaId, appState, setAppState, lastFeedback, setFeedback, addTurn, prefilledTopic, lessonParts, currentPartIndex, setPartIndex, fullContent, currentTurnSilence, addSilenceEvent, resetSilenceLog } = useSpeakingStore();
 
   const [promptExpanded, setPromptExpanded] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -241,15 +244,11 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
     Animated.timing(entranceAnim, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, []);
 
-  // VAD logic
-  useVAD({
+  // VAD logic — chỉ log khoảng lặng, KHÔNG tự nộp bài
+  const { currentSilenceMs } = useVAD({
     meteringValue,
     isRecording,
-    onSilenceDetected: async () => {
-      const uri = await stopRecording();
-      if (uri) handleVoiceSubmission(uri);
-    },
-    onVoiceResumed: () => setAppState('listening'),
+    onSilenceLogged: addSilenceEvent,
   });
 
   // TTS logic
@@ -273,7 +272,17 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
       const base64 = await readAudioFileBase64(uri);
       if (!base64 || !base64.trim()) throw new Error('EMPTY');
       if (!sessionId) return;
-      const res = await submitTurn({ sessionId, audio: base64, format: Platform.OS === 'web' ? 'webm' : 'm4a' });
+      const res = await submitTurn({
+        sessionId,
+        audio: base64,
+        format: Platform.OS === 'web' ? 'webm' : 'm4a',
+        silenceMetadata: {
+          totalSilenceMs: currentTurnSilence.totalSilenceMs,
+          mildPauseCount: currentTurnSilence.mildPauseCount,
+          significantPauseCount: currentTurnSilence.significantPauseCount,
+        },
+      });
+      resetSilenceLog();
       
       setLocalTranscript(res.transcript || '');
       setFeedback(res);
@@ -326,17 +335,20 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
     stopTTS();
     if (isRecording) {
       const uri = await stopRecording();
+      await stopSTT(uri);
       if (uri && !submitting) handleVoiceSubmission(uri);
     } else {
       if (submitting) return;
       setAppState('listening');
+      resetSTT();
       await startRecording();
+      await startSTT();
     }
   };
 
   const statusText = appState === 'loading' ? 'Examiner preparing...'
     : appState === 'speaking' ? 'Examiner speaking...'
-    : appState === 'listening' ? 'Listening to you...'
+    : appState === 'listening' ? (mode === 'offline' ? 'Listening (Offline AI)...' : 'Listening to you...')
     : appState === 'processing' ? 'Analyzing speech...'
     : 'Connected';
 
@@ -363,7 +375,7 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
         <TouchableOpacity onPress={onExit} style={styles.headerBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Talko</Text>
+        <AIModelManager modelId="whisper-tiny-en" />
         <View style={styles.headerRight}>
           <SpeakingTimer totalSeconds={timerDuration} onTimeUp={onEndSession} stopped={sessionEnded} />
           <TouchableOpacity onPress={confirmEndSession} style={styles.endBtn}>
@@ -390,6 +402,19 @@ export function SpeakingPart1Widget({ onEndSession, onManualEnd, onExit }: Speak
       </ScrollView>
 
       <Animated.View style={[styles.footerContainer, { opacity: entranceAnim }]}>
+        {isRecording && currentSilenceMs >= 2000 && (
+          <View style={styles.warningBadge}>
+            <FontAwesome name="exclamation-triangle" size={12} color="#fff" />
+            <Text style={styles.warningText}>
+              {currentSilenceMs >= 4000 ? 'Silence too long!' : 'Long pause detected'}
+            </Text>
+          </View>
+        )}
+        {isRecording && partialText !== '' && (
+          <View style={styles.draftContainer}>
+            <Text style={styles.draftText}>{partialText}</Text>
+          </View>
+        )}
         <TouchableOpacity
           onPress={handleMicPress}
           style={[styles.micBtn, isRecording && styles.micBtnActive]}
@@ -486,6 +511,29 @@ const styles = StyleSheet.create({
   footerContainer: {
     alignItems: 'center', paddingVertical: spacing.lg,
     backgroundColor: 'transparent',
+  },
+  warningBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.error,
+    paddingHorizontal: spacing.sm, paddingVertical: 4,
+    borderRadius: radius.pill, marginBottom: spacing.sm,
+    ...shadow.card,
+  },
+  warningText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  draftContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+    maxWidth: '90%',
+    ...shadow.card,
+  },
+  draftText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
   micBtn: {
     width: 64, height: 64, borderRadius: 32,

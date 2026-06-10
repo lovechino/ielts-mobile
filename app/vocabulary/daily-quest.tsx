@@ -106,7 +106,11 @@ export default function DailyQuestScreen() {
             style={styles.taskCard}
             onPress={() => router.push({
               pathname: '/vocabulary/practice',
-              params: { type: 'match', daily: 'true' }
+              params: { 
+                type: 'match', 
+                daily: 'true',
+                inlineWords: JSON.stringify(content.vocabulary || []) 
+              }
             })}
           >
             <View style={[styles.taskIcon, { backgroundColor: '#E8F5E9' }]}>
@@ -120,19 +124,24 @@ export default function DailyQuestScreen() {
           </TouchableOpacity>
 
           {/* Task 2: Reading */}
-          <TouchableOpacity 
-            style={styles.taskCard}
-            onPress={() => Alert.alert('Thông báo', 'Tính năng bài đọc Daily đang được tích hợp...')}
-          >
-            <View style={[styles.taskIcon, { backgroundColor: '#E3F2FD' }]}>
-              <FontAwesome name="file-text-o" size={20} color="#2196F3" />
-            </View>
-            <View style={styles.taskInfo}>
-              <Text style={styles.taskName}>Đọc hiểu: {content.reading?.title}</Text>
-              <Text style={styles.taskStatus}>{is_completed ? 'Đã hoàn thành' : 'Chưa làm'}</Text>
-            </View>
-            {is_completed && <FontAwesome name="check-circle" size={24} color="#4CAF50" />}
-          </TouchableOpacity>
+          {content.reading && (
+            <TouchableOpacity 
+              style={styles.taskCard}
+              onPress={() => router.push({
+                pathname: '/vocabulary/daily-reading',
+                params: { challengeData: JSON.stringify(challenge) }
+              })}
+            >
+              <View style={[styles.taskIcon, { backgroundColor: '#E3F2FD' }]}>
+                <FontAwesome name="file-text-o" size={20} color="#2196F3" />
+              </View>
+              <View style={styles.taskInfo}>
+                <Text style={styles.taskName}>Đọc hiểu: {content.reading?.title}</Text>
+                <Text style={styles.taskStatus}>{is_completed ? 'Đã hoàn thành' : 'Chưa làm'}</Text>
+              </View>
+              {is_completed && <FontAwesome name="check-circle" size={24} color="#4CAF50" />}
+            </TouchableOpacity>
+          )}
         </View>
 
         {is_completed && !reward_claimed && (

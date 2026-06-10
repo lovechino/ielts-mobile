@@ -7,8 +7,10 @@ import { useSpeakingStore } from '@/stores/useSpeakingStore';
 import { useRecorder } from '@/hooks/useRecorder';
 import { useTTS } from '@/hooks/useTTS';
 import { useVAD } from '@/hooks/useVAD';
+import { useSTT } from '@/hooks/useSTT';
 import { submitTurn } from '@/lib/api/speaking';
 import { SpeakingTimer } from './SpeakingTimer';
+import { AIModelManager } from '../vocabulary/AIModelManager';
 import { PreparationTimer } from './PreparationTimer';
 import { CueCard } from './CueCard';
 import { playSound } from '@/lib/sound';
@@ -44,11 +46,13 @@ async function readAudioFileBase64(uri: string): Promise<string> {
 export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: SpeakingPart2WidgetProps) {
   const { speak, stop: stopTTS } = useTTS();
   const { startRecording, stopRecording, meteringValue, isRecording } = useRecorder();
+  const { partialText, startSTT, stopSTT, resetSTT, mode } = useSTT();
   const {
     sessionId, currentPersonaId, appState, setAppState,
     lastFeedback, setFeedback, addTurn, prefilledTopic,
     lessonParts, currentPartIndex, setPartIndex, fullContent,
     prepTimeLeft, setPrepTimeLeft, turns,
+    currentTurnSilence, addSilenceEvent, resetSilenceLog,
   } = useSpeakingStore();
 
   const currentPart = lessonParts[currentPartIndex] || 2;
@@ -103,9 +107,11 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
     setTimeout(() => {
       setShowStartOverlay(false);
       setAppState('recording');
+      resetSTT();
       startRecording();
+      startSTT();
     }, 2500);
-  }, [startRecording, setAppState, setPrepTimeLeft]);
+  }, [startRecording, setAppState, setPrepTimeLeft, startSTT, resetSTT]);
 
   const handleVoiceSubmission = async (uri: string) => {
     setSubmitting(true);
@@ -114,7 +120,17 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
       const base64 = await readAudioFileBase64(uri);
       if (!base64 || !base64.trim()) throw new Error('EMPTY');
       if (!sessionId) return;
-      const res = await submitTurn({ sessionId, audio: base64, format: Platform.OS === 'web' ? 'webm' : 'm4a' });
+      const res = await submitTurn({
+        sessionId,
+        audio: base64,
+        format: Platform.OS === 'web' ? 'webm' : 'm4a',
+        silenceMetadata: {
+          totalSilenceMs: currentTurnSilence.totalSilenceMs,
+          mildPauseCount: currentTurnSilence.mildPauseCount,
+          significantPauseCount: currentTurnSilence.significantPauseCount,
+        },
+      });
+      resetSilenceLog();
       
       setLocalTranscript(res.transcript || '');
       setFeedback(res);
@@ -167,35 +183,33 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
     stopTTS();
     if (isRecording) {
       const uri = await stopRecording();
+      await stopSTT(uri);
       if (uri && !submitting) handleVoiceSubmission(uri);
     } else {
       if (submitting) return;
       setAppState('recording');
+      resetSTT();
       await startRecording();
+      await startSTT();
     }
   };
 
   const hasSubmitted = turns.length > 0;
+  // VAD — chỉ log khoảng lặng, KHÔNG tự nộp bài
   useVAD({
     meteringValue,
     isRecording: isRecording && hasSubmitted,
-    onSilenceDetected: async () => {
-      if (!hasSubmitted) return;
-      const uri = await stopRecording();
-      if (uri) handleVoiceSubmission(uri);
+    onSilenceLogged: (event) => {
+      if (hasSubmitted) addSilenceEvent(event);
     },
-    onVoiceResumed: () => {
-      if (hasSubmitted) setAppState('listening');
-    },
-    silenceDurationMs: 2500,
   });
 
   const statusText = appState === 'loading' ? 'Examiner preparing...'
     : appState === 'speaking' ? 'Examiner speaking...'
     : appState === 'preparing' ? 'Prepare your answer...'
-    : appState === 'recording' ? 'Recording your answer...'
+    : appState === 'recording' ? (mode === 'offline' ? 'Recording (Offline AI)...' : 'Recording your answer...')
     : appState === 'processing' ? 'Analyzing speech...'
-    : appState === 'listening' ? 'Listening to you...'
+    : appState === 'listening' ? (mode === 'offline' ? 'Listening (Offline AI)...' : 'Listening to you...')
     : 'Connected';
 
   if (ending) {
@@ -218,7 +232,7 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
         <TouchableOpacity onPress={onExit} style={styles.headerBtn}>
           <FontAwesome name="chevron-left" size={20} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Talko</Text>
+        <AIModelManager modelId="whisper-tiny-en" />
         <View style={styles.headerRight}>
           {appState === 'preparing' ? (
             <View style={styles.smallPrepTimer}>
@@ -285,6 +299,11 @@ export function SpeakingPart2Widget({ onEndSession, onManualEnd, onExit }: Speak
 
       {(appState === 'preparing' || appState === 'recording' || appState === 'listening') && (
         <Animated.View style={[styles.footerContainer, { opacity: entranceAnim }]}>
+          {isRecording && partialText !== '' && (
+            <View style={styles.draftContainer}>
+              <Text style={styles.draftText}>{partialText}</Text>
+            </View>
+          )}
           <TouchableOpacity
             onPress={handleMicPress}
             style={[styles.micBtn, isRecording && styles.micBtnActive]}
@@ -363,6 +382,21 @@ const styles = StyleSheet.create({
   },
 
   footerContainer: { alignItems: 'center', paddingVertical: spacing.lg, backgroundColor: 'transparent' },
+  draftContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+    maxWidth: '90%',
+    ...shadow.card,
+  },
+  draftText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
   micHint: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.xs },
   micBtn: {
     width: 64, height: 64, borderRadius: 32,

@@ -6,6 +6,7 @@ import { StreakBadge } from './StreakBadge';
 type Props = {
   title: string;
   avatarUri?: string;
+  avatarLetter?: string;
   avatarFrame?: string | null;
   streak?: number;
   coins?: number;
@@ -15,7 +16,7 @@ type Props = {
   hideStats?: boolean;
 };
 
-export function AppHeader({ title, avatarUri, avatarFrame, streak, coins, onLeaderboard, onBack, rightAction, hideStats }: Props) {
+export function AppHeader({ title, avatarUri, avatarLetter, avatarFrame, streak, coins, onLeaderboard, onBack, rightAction, hideStats }: Props) {
   return (
     <View style={styles.header}>
       <View style={styles.left}>
@@ -28,6 +29,8 @@ export function AppHeader({ title, avatarUri, avatarFrame, streak, coins, onLead
             <View style={styles.brandIcon}>
               {avatarUri ? (
                 <Image source={{ uri: `${avatarUri}${avatarUri.includes('?') ? '&' : '?'}v=${Date.now()}` }} style={styles.avatarImg} />
+              ) : avatarLetter ? (
+                <Text style={styles.avatarLetter}>{avatarLetter}</Text>
               ) : (
                 <FontAwesome name="paw" size={18} color={colors.secondary} />
               )}
@@ -79,6 +82,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarImg: { width: '100%', height: '100%' },
+  avatarLetter: { fontSize: 16, fontWeight: '700', color: colors.primary },
   frameImg: { position: 'absolute', top: 0, left: 0, width: 48, height: 48, zIndex: 1, backgroundColor: 'transparent' },
   title: { fontSize: 18, fontWeight: '800', color: colors.primary, letterSpacing: -0.5 },
   backBtn: { padding: spacing.xs },

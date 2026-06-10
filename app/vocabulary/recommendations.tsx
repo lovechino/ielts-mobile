@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { getVocabularyBundles, addBundleToVault } from '@/lib/offline/dictionary';
+import { triggerVaultSync } from '@/stores/useVaultSyncStore';
+import { unlockVocabularyBundle } from '@/lib/api/vocabulary';
 import { FontAwesome } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -57,6 +59,8 @@ export default function RecommendationsScreen() {
     setTimeout(async () => {
       try {
         await addBundleToVault(bundle.id, bundle.title);
+        await unlockVocabularyBundle(bundle.id).catch(console.error); // Sync lên server
+        triggerVaultSync();
         setAssessmentCompleted(); // Đảm bảo đã đánh dấu hoàn thành bài test
         setUnlocking(null);
         Alert.alert('Thành công', `Đã thêm ${bundle.title} vào Sổ tay của bạn.`, [

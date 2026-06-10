@@ -5,10 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": [
-      "ielts-master",
-      "com.googleusercontent.apps.109247400665-uankemndfn8h3j8klla9b44hof4ctb0k"
-    ],
+    "scheme": "ielts-master",
     "jsEngine": "jsc",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
@@ -56,6 +53,18 @@
             "BROWSABLE",
             "DEFAULT"
           ]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "com.googleusercontent.apps.109247400665-uankemndfn8h3j8klla9b44hof4ctb0k"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "package": "com.ieltsmaster.app"
@@ -79,7 +88,8 @@
           "androidCollapsedTitle": "Talko"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "@react-native-voice/voice"
     ],
     "extra": {
       "router": {

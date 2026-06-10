@@ -5,7 +5,7 @@ import { Screen } from '@/components/ui/Screen';
 import { ReadingScreen } from '@/components/reading/ReadingScreen';
 import { ListeningScreen } from '@/components/listening/ListeningScreen';
 import { WritingScreen } from '@/components/writing/WritingScreen';
-import { colors, spacing } from '@/theme/tokens';
+import { colors, spacing, radius } from '@/theme/tokens';
 import { FontAwesome } from '@expo/vector-icons';
 import { startSession } from '@/lib/api/speaking';
 import { useSpeakingStore } from '@/stores/useSpeakingStore';
@@ -152,6 +152,30 @@ export default function LessonScreen() {
       });
   }, [id, lessonType, lessonData, loadingLesson]);
 
+  // Check if lesson is already completed (for Reading, Listening, Writing)
+  // Speaking is handled via the startSession API which also checks limits.
+  if (!loadingLesson && lessonData?.user_progress?.status === 'completed' && lessonType !== 'speaking') {
+    return (
+      <Screen>
+        <View style={styles.completedContainer}>
+          <View style={styles.completedIconWrap}>
+            <FontAwesome name="check-circle" size={64} color={colors.tertiary} />
+          </View>
+          <Text style={styles.completedTitle}>Bài đã hoàn thành!</Text>
+          <Text style={styles.completedSub}>
+            Mỗi bài test chỉ được làm 1 lần. Bạn có thể xem lại kết quả chi tiết trong mục Lịch sử.
+          </Text>
+          <TouchableOpacity 
+            style={styles.historyBtn} 
+            onPress={() => router.replace('/(tabs)/test')}
+          >
+            <Text style={styles.historyBtnText}>Quay lại Lịch sử</Text>
+          </TouchableOpacity>
+        </View>
+      </Screen>
+    );
+  }
+
   // Speaking loading
   if (lessonType === 'speaking') {
     return (
@@ -191,6 +215,7 @@ export default function LessonScreen() {
       );
     }
     if (!lessonData) return null;
+
     return (
       <WritingScreen
         lesson={lessonData}
@@ -294,4 +319,38 @@ const styles = StyleSheet.create({
   placeholderSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
   backLink: { marginTop: spacing.md },
   backLinkText: { fontSize: 16, fontWeight: '700', color: colors.primary },
+  completedContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  completedIconWrap: {
+    marginBottom: spacing.lg,
+  },
+  completedTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  completedSub: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: spacing.xl,
+  },
+  historyBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+  },
+  historyBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });

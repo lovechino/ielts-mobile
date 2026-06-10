@@ -6,6 +6,7 @@ import { Screen } from '@/components/ui/Screen';
 import { LearningModeCard } from '@/components/ui/LearningModeCard';
 import { colors, spacing, radius } from '@/theme/tokens';
 import { getAllVaultWords, getRandomWords, toggleMasteredStatus, getWordsByLevel, getWordsByTopic } from '@/lib/offline/dictionary';
+import { triggerVaultSync } from '@/stores/useVaultSyncStore';
 import * as Speech from 'expo-speech';
 
 const QUANTITY_OPTIONS = [10, 20, 50];
@@ -126,6 +127,7 @@ export default function VocabWordsScreen() {
 
     try {
       await toggleMasteredStatus(wordId);
+      triggerVaultSync();
     } catch (e) {
       // Rollback on error
       setLearnedIds((prev) => {
